@@ -1,0 +1,100 @@
+import os
+import sys
+import gc
+import struct
+import torch
+from rwkv.model import RWKV
+
+def serialize_fp32(file, tensor):
+    d = tensor.detach().cpu().view(-1).to(torch.float32).numpy()
+    b = struct.pack(f'{len(d)}f', *d)
+    file.write(b)
+
+def export(model, export_path):
+    # fp32 - 0
+    quant = 0
+    # r  w  k  v  7  .  c
+    # 72 77 6B 76 37 2E 63
+    magic_number = 0x00632E37766B7772
+
+    export_model = open(export_path, 'wb')
+    header = struct.pack('Liiiii', magic_number, quant, n_att, n_embd, n_ffn, n_layer)
+    export_model.write(header)
+
+    weights = [
+        model['emb.weight'],                 
+
+        model['blocks.0.ln0.weight'],
+        model['blocks.0.ln0.bias'],
+    ]
+
+    for i in range(n_layer):
+        weights.extend([
+            model[f'blocks.{i}.ln1.weight'],
+            model[f'blocks.{i}.ln1.bias'],
+            model[f'blocks.{i}.ln2.weight'],
+            model[f'blocks.{i}.ln2.bias'],
+
+            model[f'blocks.{i}.att.x_r'],
+            model[f'blocks.{i}.att.x_w'],
+            model[f'blocks.{i}.att.x_k'],
+            model[f'blocks.{i}.att.x_v'],
+            model[f'blocks.{i}.att.x_a'],
+            model[f'blocks.{i}.att.x_g'],
+            model[f'blocks.{i}.att.w0'],
+            model[f'blocks.{i}.att.r_k'],
+            model[f'blocks.{i}.att.w1'],
+            model[f'blocks.{i}.att.w2'],
+            model[f'blocks.{i}.att.a1'],
+            model[f'blocks.{i}.att.a2'],
+            model[f'blocks.{i}.att.a0'],
+            model[f'blocks.{i}.att.g1'],
+            model[f'blocks.{i}.att.g2'],
+            model[f'blocks.{i}.att.k_k'],
+            model[f'blocks.{i}.att.k_a'],
+            model[f'blocks.{i}.att.receptance.weight'],
+            model[f'blocks.{i}.att.key.weight'],
+            model[f'blocks.{i}.att.value.weight'],
+            model[f'blocks.{i}.att.output.weight'],
+            model[f'blocks.{i}.att.ln_x.weight'],
+            model[f'blocks.{i}.att.ln_x.bias'],
+
+            model[f'blocks.{i}.ffn.x_k'],
+            model[f'blocks.{i}.ffn.key.weight'],
+            model[f'blocks.{i}.ffn.value.weight'],
+        ])
+
+    weights.extend([
+        model['ln_out.weight'],
+        model['ln_out.bias'],
+        model['head.weight'],
+    ])
+
+    for w in weights:
+        serialize_fp32(export_model, w)
+
+    print("Model export done: ", export_path)
+    export_model.close()
+
+if len(sys.argv) < 3:
+    print('Usage: python export.py <rwkv_model> <export_model>')
+    sys.exit(1)
+
+rwkv_model = os.path.abspath(sys.argv[1])
+if not os.path.exists(rwkv_model):
+    print(f'File {rwkv_model} not found')
+    sys.exit(1)
+
+print("Loading model...")
+model = RWKV(model=rwkv_model[:-4], strategy='cpu fp32')
+n_att = model.args.n_att
+n_embd = model.args.n_embd
+n_ffn = model.args.n_ffn
+n_layer = model.args.n_layer
+del model
+gc.collect()
+model = torch.load(rwkv_model, map_location='cpu', weights_only=True)
+
+print("Exporting model...")
+export(model, os.path.abspath(sys.argv[2]))
+
