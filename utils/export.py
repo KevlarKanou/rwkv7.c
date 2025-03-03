@@ -1,4 +1,5 @@
 import os
+os.environ["RWKV_V7_ON"] = "1"
 import sys
 import gc
 import struct
@@ -18,7 +19,7 @@ def export(model, export_path):
     magic_number = 0x00632E37766B7772
 
     export_model = open(export_path, 'wb')
-    header = struct.pack('Liiiii', magic_number, quant, n_att, n_embd, n_ffn, n_layer)
+    header = struct.pack('Liiiii', magic_number, quant, head_size, n_embd, n_layer, vocab_size)
     export_model.write(header)
 
     weights = [
@@ -87,10 +88,10 @@ if not os.path.exists(rwkv_model):
 
 print("Loading model...")
 model = RWKV(model=rwkv_model[:-4], strategy='cpu fp32')
-n_att = model.args.n_att
+head_size = model.args.head_size
 n_embd = model.args.n_embd
-n_ffn = model.args.n_ffn
 n_layer = model.args.n_layer
+vocab_size = model.args.vocab_size
 del model
 gc.collect()
 model = torch.load(rwkv_model, map_location='cpu', weights_only=True)
