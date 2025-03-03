@@ -51,6 +51,14 @@ def export(model, export_path):
             model[f'blocks.{i}.att.a0'],
             model[f'blocks.{i}.att.g1'],
             model[f'blocks.{i}.att.g2'],
+        ])
+        if i != 0:
+            weights.extend([
+                model[f'blocks.{i}.att.v2'],
+                model[f'blocks.{i}.att.v1'],
+                model[f'blocks.{i}.att.v0'],
+            ])
+        weights.extend([
             model[f'blocks.{i}.att.k_k'],
             model[f'blocks.{i}.att.k_a'],
             model[f'blocks.{i}.att.receptance.weight'],
