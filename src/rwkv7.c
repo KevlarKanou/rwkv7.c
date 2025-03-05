@@ -212,7 +212,7 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
 
     // w = np.exp(-sigmoid(np.tanh(xw @ Ww1) @ Ww2 + w_bias)/np.e**0.5)
     float w[c->n_embd];
-    float w_tanh_[c->head_size], w_sigmoid_[c->n_embd];
+    float w_tanh_[c->w_lora_r], w_sigmoid_[c->n_embd];
     VECxMAT(w_tanh_, xw, bw->att_w1);                                                   // xw @ Ww1
     VECTANH(w_tanh_);                                                                   // np.tanh(xw @ Ww1)
     VECxMAT(w_sigmoid_, w_tanh_, bw->att_w2);                                           // np.tanh(xw @ Ww1) @ Ww2
@@ -228,13 +228,12 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     float v[c->n_embd];
     MATxVEC(v, xv, bw->att_value_weight);
 
-
     if (IS_NAN(v0[0])) {
         memcpy(v0, v, sizeof(float) * c->n_embd);
     }
     else {
         // v += (v0 - v) * sigmoid(xv @ Wv1 @ Wv2 + v_bias)
-        float xv_mul_Wv1[32];
+        float xv_mul_Wv1[c->v_lora_r];
         float v_sigmoid_[c->n_embd];
         VECxMAT(xv_mul_Wv1, xv, bw->att_v1);                                            // xv @ Wv1
         VECxMAT(v_sigmoid_, xv_mul_Wv1, bw->att_v2);                                    // xv @ Wv1 @ Wv2
@@ -245,7 +244,7 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
 
     // a = sigmoid(xa @ Wa1 @ Wa2 + a_bias)
     float a[c->n_embd];
-    float xa_mul_Wa1[c->head_size];
+    float xa_mul_Wa1[c->a_lora_r];
     VECxMAT(xa_mul_Wa1, xa, bw->att_a1);    // xa @ Wa1
     VECxMAT(a, xa_mul_Wa1, bw->att_a2);     // xa @ Wa1 @ Wa2
     VECADD(a, a, bw->att_a0);               // xa @ Wa1 @ Wa2 + a_bias
@@ -253,7 +252,7 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
 
     // g = sigmoid(xg @ Wg1) @ Wg2
     float g[c->n_embd];
-    float g_sigmoid_[128];
+    float g_sigmoid_[c->g_lora_r];
     VECxMAT(g_sigmoid_, xg, bw->att_g1);    // xg @ Wg1
     VECSIGM(g_sigmoid_);                    // sigmoid(...)
     VECxMAT(g, g_sigmoid_, bw->att_g2);     // sigmoid(...) * Wg2
@@ -429,6 +428,10 @@ void load_model(char *model_path, rwkv_config *c, rwkv_weights *w) {
         int32_t n_embd;
         int32_t n_layer;
         int32_t vocab_size;
+        int32_t w_lora_r;
+        int32_t a_lora_r;
+        int32_t g_lora_r;
+        int32_t v_lora_r;
     } header;
     #pragma pack(pop)
     if (fread(&header, sizeof(header), 1, fp) != 1) { exit(EXIT_FAILURE); }
@@ -442,6 +445,10 @@ void load_model(char *model_path, rwkv_config *c, rwkv_weights *w) {
     c->n_embd       = header.n_embd;
     c->n_layer      = header.n_layer;
     c->n_head       = header.n_embd / c->head_size;
+    c->w_lora_r     = header.w_lora_r;
+    c->a_lora_r     = header.a_lora_r;
+    c->g_lora_r     = header.g_lora_r;
+    c->v_lora_r     = header.v_lora_r;
 
     // load weights
     w->blocks = malloc(c->n_layer * sizeof(block_weights));
@@ -469,16 +476,16 @@ void load_model(char *model_path, rwkv_config *c, rwkv_weights *w) {
         b->att_x_g                  = ptr; ptr += c->n_embd                     ;
         b->att_w0                   = ptr; ptr += c->n_embd                     ;
         b->att_r_k                  = ptr; ptr += c->n_head     * c->head_size  ;
-        b->att_w1                   = ptr; ptr += c->n_embd     * c->head_size  ;
-        b->att_w2                   = ptr; ptr += c->head_size  * c->n_embd     ;
-        b->att_a1                   = ptr; ptr += c->n_embd     * c->head_size  ;
-        b->att_a2                   = ptr; ptr += c->head_size  * c->n_embd     ;
+        b->att_w1                   = ptr; ptr += c->n_embd     * c->w_lora_r   ;
+        b->att_w2                   = ptr; ptr += c->w_lora_r   * c->n_embd     ;
+        b->att_a1                   = ptr; ptr += c->n_embd     * c->a_lora_r   ;
+        b->att_a2                   = ptr; ptr += c->a_lora_r   * c->n_embd     ;
         b->att_a0                   = ptr; ptr += c->n_embd                     ;
-        b->att_g1                   = ptr; ptr += c->n_embd     * 128           ;
-        b->att_g2                   = ptr; ptr += 128           * c->n_embd     ;
+        b->att_g1                   = ptr; ptr += c->n_embd     * c->g_lora_r   ;
+        b->att_g2                   = ptr; ptr += c->g_lora_r   * c->n_embd     ;
         if (i != 0) {
-            b->att_v2               = ptr; ptr += 32            * c->n_embd     ;
-            b->att_v1               = ptr; ptr += c->n_embd     * 32            ;
+            b->att_v2               = ptr; ptr += c->v_lora_r   * c->n_embd     ;
+            b->att_v1               = ptr; ptr += c->n_embd     * c->v_lora_r   ;
             b->att_v0               = ptr; ptr += c->n_embd                     ;
         }
         b->att_k_k                  = ptr; ptr += c->n_embd                     ;
@@ -495,7 +502,7 @@ void load_model(char *model_path, rwkv_config *c, rwkv_weights *w) {
     }
     w->ln_out_weight                = ptr; ptr += c->n_embd                     ;
     w->ln_out_bias                  = ptr; ptr += c->n_embd                     ;
-    w->head_weight                  = ptr; ptr += c->n_embd * c->vocab_size     ;
+    w->head_weight                  = ptr; ptr += c->n_embd     * c->vocab_size ;
 
     assert((ptr - w->raw) * sizeof(float) == raw_weights_size);
 }

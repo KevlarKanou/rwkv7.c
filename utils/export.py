@@ -18,8 +18,17 @@ def export(model, export_path):
     # 72 77 6B 76 37 2E 63
     magic_number = 0x00632E37766B7772
 
+    w_lora_rank = model['blocks.0.att.w1'].size()[1]
+    a_lora_rank = model['blocks.0.att.a1'].size()[1]
+    g_lora_rank = model['blocks.0.att.g1'].size()[1]
+    v_lora_rank = model['blocks.1.att.v1'].size()[1]
+
     export_model = open(export_path, 'wb')
-    header = struct.pack('Liiiii', magic_number, quant, head_size, n_embd, n_layer, vocab_size)
+    header = struct.pack(
+        'Liiiiiiiii',
+        magic_number, quant, head_size, n_embd, n_layer, vocab_size,
+        w_lora_rank, a_lora_rank, g_lora_rank, v_lora_rank
+    )
     export_model.write(header)
 
     weights = [

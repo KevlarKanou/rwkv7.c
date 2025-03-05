@@ -37,6 +37,10 @@ typedef struct {
     int32_t n_embd;
     int32_t n_layer;
     int32_t n_head;
+    int32_t w_lora_r;
+    int32_t a_lora_r;
+    int32_t g_lora_r;
+    int32_t v_lora_r;
 } rwkv_config;
 
 typedef struct {
