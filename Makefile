@@ -6,7 +6,7 @@ CFLAGS = -Wall -Wextra -Werror -pedantic -O3 -finput-charset=UTF-8 -lm
 default: $(BIN)
 
 $(BIN): $(SRC)
-	@$(CC) $(CFLAGS) -o rwkv7 $(SRC)
+	@$(CC) -o $(BIN) $(SRC) $(CFLAGS)
 
 clean:
 	@rm -f $(BIN)
