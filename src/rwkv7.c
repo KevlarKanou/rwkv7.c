@@ -560,16 +560,17 @@ void error_usage(char *argv[]) {
 int main(int argc, char *argv[]) {
     bool chat_mode = false;
     const char *msg = NULL;
+    const char *model_path = NULL;
     if (argc < 2) { error_usage(argv); }
-    for (int i = 1; i < argc - 1; i++) {
-        if (argv[i][0] != '-') { error_usage(argv);}
+    for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--chat") == 0) { chat_mode = true; }
         else if ((strcmp(argv[i], "-i") == 0) || (strcmp(argv[i], "--input") == 0)) {
             msg = argv[i + 1];
             i++;
         }
+        else { model_path = argv[i]; }
     }
-    const char *model_path = argv[argc - 1];
+    if ((msg == NULL) | (model_path == NULL)) { error_usage(argv); }
 
     printf("Hello, RWKV!\n\n");
     rwkv_config config;
