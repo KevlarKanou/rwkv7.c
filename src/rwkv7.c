@@ -553,17 +553,19 @@ void error_usage(char *argv[]) {
     fprintf(stderr, "Usage: %s [options] model_path\n", argv[0]);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  --chat                       enable chat mode\n");
+    fprintf(stderr, "  --reasoner                   enable reasoner mode\n");
     fprintf(stderr, "  -i, --input <input message>  model inference input\n");
     exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
-    bool chat_mode = false;
+    bool chat_mode = false, reasoner_mode = false;
     const char *msg = NULL;
     const char *model_path = NULL;
     if (argc < 2) { error_usage(argv); }
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--chat") == 0) { chat_mode = true; }
+        else if (strcmp(argv[i], "--reasoner") == 0) { chat_mode = true; reasoner_mode = true; }
         else if ((strcmp(argv[i], "-i") == 0) || (strcmp(argv[i], "--input") == 0)) {
             msg = argv[i + 1];
             i++;
@@ -587,10 +589,15 @@ int main(int argc, char *argv[]) {
 
     char *context = NULL;
     int context_len = 0;
-    if (chat_mode) {
+    if (chat_mode && !reasoner_mode) {
         context_len = strlen(msg) + strlen("User: \n\nAssistant:");
         context = malloc(context_len + 1);
         sprintf(context, "User: %s\n\nAssistant:", msg);
+    }
+    else if (chat_mode && reasoner_mode) {
+        context_len = strlen(msg) + strlen("User: \n\nAssistant:<think>");
+        context = malloc(context_len + 1);
+        sprintf(context, "User: %s\n\nAssistant:<think>", msg);
     }
     else {
         context_len = strlen(msg);

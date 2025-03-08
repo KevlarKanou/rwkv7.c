@@ -10,6 +10,7 @@ Inference RWKV v7 in **pure C**, WIP.
 RWKV-x070-World-0.1B-v2.8-20241210-ctx4096.pth
 RWKV-x070-World-0.4B-v2.9-20250107-ctx4096.pth
 RWKV-x070-World-2.9B-v3-20250211-ctx4096.pth
+rwkv7-g1-0.1b-20250307-ctx4096.pth
 ```
 
 ## Usage
@@ -22,6 +23,8 @@ make
 ./rwkv7 ./model.bin -i "Once upon a time,"
 # chat mode
 ./rwkv7 ./model.bin --chat -i "Where is the capital of France?"
+# reasoner mode (rwkv7-g1)
+./rwkv7 ./model-g1.bin --reasoner -i "What is RWKV?"
 ```
 
 ## TODO
