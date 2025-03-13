@@ -67,14 +67,14 @@ void group_norm(float *xout, const float *x, const float *weight, const float *b
     }
 }
 
-void softmax(float *xout, const float *x, int size) {
+void softmax(float *xout, const float *x, float temp, int size) {
     float max = 0.0;
     for (int i = 0; i < size; i++) {
         if (x[i] > max) { max = x[i]; }
     }
     float sum = 0.0f;
     for (int i = 0; i < size; i++) {
-        xout[i] = exp(x[i] - max);
+        xout[i] = exp((x[i] - max) / temp);
         sum += xout[i];
     }
     for (int i = 0; i < size; i++) { xout[i] /= sum; }
@@ -196,17 +196,54 @@ void encode(rwkv_tokenizer *t, char *text, int *tokens, int *n_tokens) {
     free(str_buffer);
 }
 
-int sample_argmax(float *logits, int vocab_size) {
-    // return the index that has the highest probability
-    int max_idx = 0;
-    float max_prob = logits[0];
-    for (int i = 0; i < vocab_size; i++) {
-        if (logits[i] > max_prob) {
-            max_idx = i;
-            max_prob = logits[i];
+// sampler
+int compare_probs(const void* a, const void* b) {
+    ProbIndex* a_ = (ProbIndex*) a;
+    ProbIndex* b_ = (ProbIndex*) b;
+    if (a_->prob > b_->prob) return -1;
+    if (a_->prob < b_->prob) return 1;
+    return 0;
+}
+
+int sample_logits(float* logits, rwkv_config *c, rwkv_sampler *s) {
+    int next = 0;
+    if (s->temperature != 0.0f) {
+        softmax(logits, logits, s->temperature, c->vocab_size);
+    }
+
+    ProbIndex sorted_probs[c->vocab_size];
+    for (int i = 0; i < c->vocab_size; i++) {
+        sorted_probs[i].index = i;
+        sorted_probs[i].prob = logits[i];
+    }
+    qsort(sorted_probs, c->vocab_size, sizeof(ProbIndex), compare_probs);
+
+    if (s->temperature != 0.0f) {
+        // calculate cutoff length
+        int cutoff_len = 0;
+        float cumulative_probs = 0;
+        for (; cutoff_len < c->vocab_size; cutoff_len++) {
+            cumulative_probs += sorted_probs[cutoff_len].prob;
+            if (s->top_p <= cumulative_probs) {
+                cutoff_len++;
+                break;
+            }
+        }
+        // roll a die!
+        float die = (float)rand() / (float)RAND_MAX * cumulative_probs;
+        cumulative_probs = 0.0f;
+        for (int i = 0; i < cutoff_len; i++) {
+            cumulative_probs += sorted_probs[i].prob;
+            if (die <= cumulative_probs) {
+                next = sorted_probs[i].index;
+                break;
+            }
         }
     }
-    return max_idx;
+    else {
+        next = sorted_probs[0].index;
+    }
+    return next;
 }
 
 // RWKV block
@@ -555,26 +592,42 @@ void error_usage(char *argv[]) {
     fprintf(stderr, "  --chat                       enable chat mode\n");
     fprintf(stderr, "  --reasoner                   enable reasoner mode\n");
     fprintf(stderr, "  -i, --input <input message>  model inference input\n");
+    fprintf(stderr, "  --temperature <float>        sample temperature\n");
+    fprintf(stderr, "  --top-p <float>              sample top-p\n");
+    fprintf(stderr, "  --seed <int>                 random seed\n");
     exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
+
+    rwkv_sampler sampler = { .temperature = 1.0, .top_p = 0.7 };
+    unsigned int seed = time(NULL);
     bool chat_mode = false, reasoner_mode = false;
     const char *msg = NULL;
     const char *model_path = NULL;
+
     if (argc < 2) { error_usage(argv); }
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--chat") == 0) { chat_mode = true; }
-        else if (strcmp(argv[i], "--reasoner") == 0) { chat_mode = true; reasoner_mode = true; }
-        else if ((strcmp(argv[i], "-i") == 0) || (strcmp(argv[i], "--input") == 0)) {
-            msg = argv[i + 1];
-            i++;
-        }
+        if (strcmp(argv[i], "--chat") == 0) 
+            { chat_mode = true; }
+        else if (strcmp(argv[i], "--reasoner") == 0)
+            { chat_mode = true; reasoner_mode = true; }
+        else if ((strcmp(argv[i], "-i") == 0) || (strcmp(argv[i], "--input") == 0))
+            { msg = argv[i + 1]; i++; }
+        else if (strcmp(argv[i], "--temperature") == 0)
+            { sampler.temperature = atof(argv[i + 1]); i++; }
+        else if (strcmp(argv[i], "--top-p") == 0) 
+            { sampler.top_p = atof(argv[i + 1]); i++; }
+        else if (strcmp(argv[i], "--seed") == 0) 
+            { seed = atoi(argv[i + 1]); i++; }
         else { model_path = argv[i]; }
     }
     if ((msg == NULL) | (model_path == NULL)) { error_usage(argv); }
+    if (sampler.temperature < 0.0) { sampler.temperature = 0.0; }
+    if (sampler.top_p < 0.0) { sampler.top_p = 0.0; }
+    srand(seed);
 
-    printf("Hello, RWKV!\n\n");
+    printf("Hello, RWKV!, seed: %u\n\n", seed);
     rwkv_config config;
     rwkv_weights weights;
     rwkv_tokenizer tokenizer;
@@ -635,7 +688,7 @@ int main(int argc, char *argv[]) {
     SYSTIME_MS(start);
     int decoding_tokens = 0;
     for (decoding_tokens = 0; decoding_tokens < 10240; decoding_tokens++) {
-        int next_token = sample_argmax(logits, config.vocab_size);
+        int next_token = sample_logits(logits, &config, &sampler);
         if (next_token == 0) { break; }
 
         forward(logits, &config, &weights, model_state, next_token);

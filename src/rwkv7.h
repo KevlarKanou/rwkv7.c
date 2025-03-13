@@ -104,4 +104,17 @@ typedef struct {
     unsigned int max_token_length;
 } rwkv_tokenizer;
 
+typedef struct {
+    float prob;
+    int index;
+} ProbIndex;
+
+typedef struct {
+    float temperature;
+    float top_p;
+    // TODO
+    // float presence_penalty;
+    // float frequency_penalty;
+} rwkv_sampler;
+
 #endif
