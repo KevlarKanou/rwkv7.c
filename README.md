@@ -2,7 +2,7 @@
 
 *Inspired by [llama2.c](https://github.com/karpathy/llama2.c).*
 
-Inference RWKV v7 in **pure C**, WIP.
+Inference RWKV v7 in **pure C**.
 
 ## Tested model
 
@@ -20,14 +20,13 @@ wget "https://huggingface.co/BlinkDL/rwkv-7-world/resolve/main/RWKV-x070-World-0
 python ./utils/export.py ./model.pth ./model.bin # pip install torch rwkv
 make
 # generate mode
-./rwkv7 ./model.bin -i "Once upon a time," --temperature 1.3 --top-p 0.8
+./rwkv7 ./model.bin -i "Once upon a time," --temperature 1.3 --top-p 0.8 --presence_penalty 0.4 --frequency_penalty 0.5
 # chat mode
-./rwkv7 ./model.bin --chat -i "Where is the capital of France?" --temperature 0.8 --top-p 0.2
+./rwkv7 ./model.bin --chat -i "Where is the capital of France?" --temperature 0.8 --top-p 0.2 --presence_penalty 0.1 --frequency_penalty 0.2
 # reasoner mode (rwkv7-g1)
-./rwkv7 ./model-g1.bin --reasoner -i "What is RWKV?" # default params: temperature = 1.0, top-p = 0.7
+./rwkv7 ./model-g1.bin --reasoner -i "What is RWKV?" # default params: temperature = 1.0, top-p = 0.7 presence_penalty = 0.1 frequency_penalty = 0.2
 ```
 
 ## TODO
-- Repetition penalty
 - Optimize with vector instruction (AVX, NEON...)
 - Load generic model format (.pth, .gguf...)

@@ -207,6 +207,10 @@ int compare_probs(const void* a, const void* b) {
 
 int sample_logits(float* logits, rwkv_config *c, rwkv_sampler *s) {
     int next = 0;
+    // apply repetition penalty to logits
+    for (int i = 0; i < c->vocab_size; i++) {
+        logits[i] -= s->presence_penalty + s->occurrence[i] * s->frequency_penalty;
+    }
     if (s->temperature != 0.0f) {
         softmax(logits, logits, s->temperature, c->vocab_size);
     }
@@ -243,6 +247,11 @@ int sample_logits(float* logits, rwkv_config *c, rwkv_sampler *s) {
     else {
         next = sorted_probs[0].index;
     }
+
+    // maintain repetition penalty
+    for (int i = 0; i < c->vocab_size; i++) { s->occurrence[i] *= s->presence_penalty; }
+    s->occurrence[next] += 1;
+
     return next;
 }
 
@@ -594,13 +603,15 @@ void error_usage(char *argv[]) {
     fprintf(stderr, "  -i, --input <input message>  model inference input\n");
     fprintf(stderr, "  --temperature <float>        sample temperature\n");
     fprintf(stderr, "  --top-p <float>              sample top-p\n");
+    fprintf(stderr, "  --presence_penalty <float>   presence penalty\n");
+    fprintf(stderr, "  --frequency_penalty <float>  frequency penalty\n");
     fprintf(stderr, "  --seed <int>                 random seed\n");
     exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
 
-    rwkv_sampler sampler = { .temperature = 1.0, .top_p = 0.7 };
+    rwkv_sampler sampler = { .temperature = 1.0, .top_p = 0.7, .presence_penalty = 0.1, .frequency_penalty = 0.2 };
     unsigned int seed = time(NULL);
     bool chat_mode = false, reasoner_mode = false;
     const char *msg = NULL;
@@ -620,11 +631,17 @@ int main(int argc, char *argv[]) {
             { sampler.top_p = atof(argv[i + 1]); i++; }
         else if (strcmp(argv[i], "--seed") == 0) 
             { seed = atoi(argv[i + 1]); i++; }
+        else if (strcmp(argv[i], "--presence_penalty") == 0)
+            { sampler.presence_penalty = atof(argv[i + 1]); i++; }
+        else if (strcmp(argv[i], "--frequency_penalty") == 0)
+            { sampler.frequency_penalty = atof(argv[i + 1]); i++; }
         else { model_path = argv[i]; }
     }
     if ((msg == NULL) | (model_path == NULL)) { error_usage(argv); }
-    if (sampler.temperature < 0.0) { sampler.temperature = 0.0; }
-    if (sampler.top_p < 0.0) { sampler.top_p = 0.0; }
+    if (sampler.temperature         < 0.0) { sampler.temperature        = 0.0; }
+    if (sampler.top_p               < 0.0) { sampler.top_p              = 0.0; }
+    if (sampler.presence_penalty    < 0.0) { sampler.presence_penalty   = 0.0; }
+    if (sampler.frequency_penalty   < 0.0) { sampler.frequency_penalty  = 0.0; }
     srand(seed);
 
     printf("Hello, RWKV!, seed: %u\n\n", seed);
@@ -639,6 +656,8 @@ int main(int argc, char *argv[]) {
     printf("Loading tokenizer...\n");
     load_tokenizer(&tokenizer, VOCAB_SIZE);
     printf("Tokenizer loaded!\n\n");
+
+    sampler.occurrence = calloc(config.vocab_size, sizeof(int));
 
     char *context = NULL;
     int context_len = 0;
@@ -711,4 +730,5 @@ int main(int argc, char *argv[]) {
     free(model_state[1]);
     free_model(&weights);
     free_tokenizer(&tokenizer);
+    free(sampler.occurrence);
 }

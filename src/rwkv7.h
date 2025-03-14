@@ -112,9 +112,9 @@ typedef struct {
 typedef struct {
     float temperature;
     float top_p;
-    // TODO
-    // float presence_penalty;
-    // float frequency_penalty;
+    float presence_penalty;
+    float frequency_penalty;
+    int *occurrence;
 } rwkv_sampler;
 
 #endif
