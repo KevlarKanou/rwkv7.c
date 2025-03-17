@@ -84,6 +84,17 @@ void lerp(float *xout, const float *x, const float *last_x, const float *mu, int
     for (int i = 0; i < size; i++) {
         xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);
     }
+
+void lora(float *xout, const float *x, const float *weight_1, const float *weight_2, int x_len, int lora_rank, lora_act func) {
+    float tmp[lora_rank];
+    vec_mul_mat(tmp, x, weight_1, x_len, lora_rank);
+    switch (func) {
+        case LORA_NONE: break;
+        case LORA_TANH: VECTANH(tmp); break;
+        case LORA_SIGM: VECSIGM(tmp); break;
+        default: assert(0);
+    }
+    vec_mul_mat(xout, tmp, weight_2, lora_rank, x_len);
 }
 
 // utils for tokenizer
@@ -271,13 +282,13 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
 
     // w = np.exp(-sigmoid(np.tanh(xw @ Ww1) @ Ww2 + w_bias)/np.e**0.5)
     float w[c->n_embd];
-    float w_tanh_[c->w_lora_r], w_sigmoid_[c->n_embd];
-    VECxMAT(w_tanh_, xw, bw->att_w1);                                                   // xw @ Ww1
-    VECTANH(w_tanh_);                                                                   // np.tanh(xw @ Ww1)
-    VECxMAT(w_sigmoid_, w_tanh_, bw->att_w2);                                           // np.tanh(xw @ Ww1) @ Ww2
-    VECADD(w_sigmoid_, w_sigmoid_, bw->att_w0);                                         // np.tanh(xw @ Ww1) @ Ww2 + w_bias
-    VECSIGM(w_sigmoid_);                                                                // sigmoid(...)
-    for (int i = 0; i < c->n_embd; i++) { w[i] = exp(-w_sigmoid_[i] / SQRT_E_VALUE); }  // exp(...)
+    do {
+        float w_sigmoid_[c->n_embd];
+        lora(w_sigmoid_, xw, bw->att_w1, bw->att_w2, ARRLEN(xw), c->w_lora_r, LORA_TANH);   // np.tanh(xw @ Ww1) @ Ww2
+        VECADD(w_sigmoid_, w_sigmoid_, bw->att_w0);                                         // np.tanh(xw @ Ww1) @ Ww2 + w_bias
+        VECSIGM(w_sigmoid_);                                                                // sigmoid(...)
+        for (int i = 0; i < c->n_embd; i++) { w[i] = exp(-w_sigmoid_[i] / SQRT_E_VALUE); }  // exp(...)
+    } while(0); // w = np.exp(-sigmoid(np.tanh(xw @ Ww1) @ Ww2 + w_bias)/np.e**0.5)
 
     // k = Wk @ xk
     float k[c->n_embd];
@@ -292,29 +303,22 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     }
     else {
         // v += (v0 - v) * sigmoid(xv @ Wv1 @ Wv2 + v_bias)
-        float xv_mul_Wv1[c->v_lora_r];
         float v_sigmoid_[c->n_embd];
-        VECxMAT(xv_mul_Wv1, xv, bw->att_v1);                                            // xv @ Wv1
-        VECxMAT(v_sigmoid_, xv_mul_Wv1, bw->att_v2);                                    // xv @ Wv1 @ Wv2
-        VECADD(v_sigmoid_, v_sigmoid_, bw->att_v0);                                     // xv @ Wv1 @ Wv2 + v_bias
-        VECSIGM(v_sigmoid_);                                                            // sigmoid(...)
-        for (int i = 0; i < ARRLEN(v); i++) { v[i] += (v0[i] - v[i]) * v_sigmoid_[i]; } // (v0 - v) * sigmoid(...)
+        lora(v_sigmoid_, xv, bw->att_v1, bw->att_v2, ARRLEN(xv), c->v_lora_r, LORA_NONE);   // xv @ Wv1 @ Wv2
+        VECADD(v_sigmoid_, v_sigmoid_, bw->att_v0);                                         // xv @ Wv1 @ Wv2 + v_bias
+        VECSIGM(v_sigmoid_);                                                                // sigmoid(...)
+        for (int i = 0; i < ARRLEN(v); i++) { v[i] += (v0[i] - v[i]) * v_sigmoid_[i]; }     // (v0 - v) * sigmoid(...)
     }
 
     // a = sigmoid(xa @ Wa1 @ Wa2 + a_bias)
     float a[c->n_embd];
-    float xa_mul_Wa1[c->a_lora_r];
-    VECxMAT(xa_mul_Wa1, xa, bw->att_a1);    // xa @ Wa1
-    VECxMAT(a, xa_mul_Wa1, bw->att_a2);     // xa @ Wa1 @ Wa2
-    VECADD(a, a, bw->att_a0);               // xa @ Wa1 @ Wa2 + a_bias
-    VECSIGM(a);                             // sigmoid(...)
+    lora(a, xa, bw->att_a1, bw->att_a2, ARRLEN(xa), c->a_lora_r, LORA_NONE);    // xa @ Wa1 @ Wa2
+    VECADD(a, a, bw->att_a0);                                                   // xa @ Wa1 @ Wa2 + a_bias
+    VECSIGM(a);                                                                 // sigmoid(...)
 
     // g = sigmoid(xg @ Wg1) @ Wg2
     float g[c->n_embd];
-    float g_sigmoid_[c->g_lora_r];
-    VECxMAT(g_sigmoid_, xg, bw->att_g1);    // xg @ Wg1
-    VECSIGM(g_sigmoid_);                    // sigmoid(...)
-    VECxMAT(g, g_sigmoid_, bw->att_g2);     // sigmoid(...) * Wg2
+    lora(g, xg, bw->att_g1, bw->att_g2, ARRLEN(xg), c->g_lora_r, LORA_SIGM);
 
     // kk = k * k_k
     float kk[c->n_embd];

@@ -33,6 +33,10 @@
 #define E_VALUE                     2.7182818284590451
 #define SQRT_E_VALUE                1.6487212707001282
 
+typedef enum {
+    LORA_NONE, LORA_TANH, LORA_SIGM
+} lora_act;
+
 typedef struct {
     int32_t head_size;
     int32_t vocab_size;
