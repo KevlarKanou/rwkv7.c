@@ -27,7 +27,13 @@ void vec_mul_mat(float *xout, const float *x, const float *w, int x_len, int xou
     }
 }
 
-void layer_norm(float *xout, const float *x, const float *weight, const float *bias, int size) {
+void vec_out_product(float *xout, const float *a, const float *b, int vec_len) {
+    for (int i = 0; i < vec_len; i++) {
+        for (int j = 0; j < vec_len; j++) { xout[i * vec_len + j] = a[i] * b[j]; }
+    }
+}
+
+void layer_norm(float *xout, const float *x, const float *weight, const float *bias, int size, float sqrt_bias) {
     float x_mean = 0.0;
     for (int i = 0; i < size; i++) { x_mean += x[i]; }
     x_mean /= size;
@@ -37,33 +43,7 @@ void layer_norm(float *xout, const float *x, const float *weight, const float *b
     x_var /= size;
 
     for (int i = 0; i < size; i++) {
-        xout[i] = ((x[i] - x_mean) / sqrt(x_var + 1e-5f)) * weight[i] + bias[i];
-    }
-}
-
-void group_norm(float *xout, const float *x, const float *weight, const float *bias, int group_num, int group_size) {
-    float x_mean[group_num], x_var[group_num];
-    for (int i = 0; i < group_num; i++) {
-        x_mean[i] = 0.0;
-        for (int j = 0; j < group_size; j++) {
-            int x_idx = IDX(i, j, 0, group_size, 1);
-            x_mean[i] += x[x_idx];
-        }
-        x_mean[i] /= group_size;
-        
-        x_var[i] = 0.0;
-        for (int j = 0; j < group_size; j++) {
-            int x_idx = IDX(i, j, 0, group_size, 1);
-            x_var[i] += (x[x_idx] - x_mean[i]) * (x[x_idx] - x_mean[i]);
-        }
-        x_var[i] /= group_size;
-    }
-
-    for (int i = 0; i < group_num; i++) {
-        for (int j = 0; j < group_size; j++) {
-            int x_idx = IDX(i, j, 0, group_size, 1);
-            xout[x_idx] = ((x[x_idx] - x_mean[i]) / sqrt(x_var[i] + 64e-5f)) * weight[x_idx] + bias[x_idx];
-        }
+        xout[i] = ((x[i] - x_mean) / sqrt(x_var + sqrt_bias)) * weight[i] + bias[i];
     }
 }
 
@@ -327,106 +307,80 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     // k += k * (a-1) * k_a
     for (int i = 0; i < ARRLEN(k); i++) { k[i] += k[i] * (a[i] - 1) * bw->att_k_a[i]; }
 
-    // r,w,k,v,kk,a,r_k = [i.reshape(N_HEAD, HEAD_SIZE, 1) for i in [r,w,k,v,kk,a,r_k]]
-    // kk /= np.maximum(np.linalg.norm(kk, axis=1,keepdims=1), 1e-12)
-    // TODO
-    for (int i = 0; i < c->n_head; i++) {
-        float kk_norm = 0.0;
-        for (int j = 0; j < c->head_size; j++) { kk_norm += SQUARE(kk[i * c->head_size + j]); }
-        kk_norm = sqrt(kk_norm);
-        for (int j = 0; j < c->head_size; j++) { kk[i * c->head_size + j] /= MAXIMUM(kk_norm, 1e-12f); }
-    }
-
-    /*---S = S * w.mT - S @ kk * (kk*a).mT + v * k.mT---*/
-    // tmp0: S * w.mT -> X[i,j,k] = S[i,j,k] * w[i,k,0]
-    // tmp1: S @ kk * (kk*a).mT = X[i,j,k]=(∑(m=0 -> 63)​S[i,j,m]*kk[i,m,0])×(kk[i,k,0]×a[i,k,0])
-    // tmp2: v * k.mT -> X[i,j,k] = v[i,j,0] * k[i,k,0]
-    do {
-        // S * w.mT
-        // TODO
-        float state_mul_w_mT[c->n_head * c->head_size * c->head_size];
-        for (int i = 0; i < c->n_head; i++) {
-            for (int j = 0; j < c->head_size; j++) {
-                for (int k = 0; k < c->head_size; k++) {
-                    // S[i,j,k] * w[i,k,0]
-                    int state_idx = IDX(i, j, k, c->head_size, c->head_size);
-                    int w_idx = IDX(i, k, 0, c->head_size, 1);
-                    state_mul_w_mT[state_idx] = state[state_idx] * w[w_idx];
-                }
-            }
-        }
-        // S @ kk
-        float state_mul_kk[c->n_head * c->head_size];
-        for (int i = 0; i < c->n_head; i++) {
-            int state_offset = IDX(i, 0, 0, c->head_size, c->head_size);
-            int kk_offset = IDX(i, 0, 0, c->head_size, 1);
-            mat_mul_vec(state_mul_kk + kk_offset, kk + kk_offset, state + state_offset, c->head_size, c->head_size);
-        }
-        // kk * a
-        float kk_mul_a[c->n_head * c->head_size];
-        HADAMARD(kk_mul_a, kk, a);
-        // tmp1
-        float tmp1[c->n_head * c->head_size * c->head_size];
-        for (int i = 0; i < c->n_head; i++) {
-            for (int j = 0; j < c->head_size; j++) {
-                for (int k = 0; k < c->head_size; k++) {
-                    // temp1[i,j,0] * temp2.mT[i,0,k] = temp1[i,j,0] * temp2[i,k,0]
-                    float val1 = state_mul_kk[IDX(i, j, 0, c->head_size, 1)];
-                    float val2 = kk_mul_a[IDX(i, k, 0, c->head_size, 1)];
-                    tmp1[IDX(i, j, k, c->head_size, c->head_size)] = val1 * val2;
-                }
-            }
-        }
-        // v * k.mT
-        float v_mul_k_mT[c->n_head * c->head_size * c->head_size];
-        for (int i = 0; i < c->n_head; i++) {
-            for (int j = 0; j < c->head_size; j++) {
-                for (int m = 0; m < c->head_size; m++) {
-                    // v[i,j,0] * k[i,m,0]
-                    int v_idx = IDX(i, j, 0, c->head_size, 1);
-                    int k_idx = IDX(i, m, 0, c->head_size, 1);
-                    v_mul_k_mT[IDX(i, j, m, c->head_size, c->head_size)] = v[v_idx] * k[k_idx];
-                }
-            }
-        }
-        // final result
-        VECSUB_L(state, state_mul_w_mT, tmp1, ARRLEN(state_mul_w_mT));
-        VECADD_L(state, state, v_mul_k_mT, ARRLEN(v_mul_k_mT));
-    } while (0);
-    /*---END: S = S * w.mT - S @ kk * (kk*a).mT + v * k.mT---*/
-
-    // y = S @ r 
+    // multi-head
     float y[c->n_head * c->head_size];
     for (int i = 0; i < c->n_head; i++) {
-        int state_offset = IDX(i, 0, 0, c->head_size, c->head_size);
-        int r_offset = IDX(i, 0, 0, c->head_size, 1);
-        mat_mul_vec(y + r_offset, r + r_offset, state + state_offset, c->head_size, c->head_size);
-    }
+        float *head_state   = state + i * c->head_size * c->head_size;
+        float *head_kk      = kk    + i * c->head_size;
+        float *head_y       = y     + i * c->head_size;
+        const float *head_r = r     + i * c->head_size;
+        const float *head_w = w     + i * c->head_size;
+        const float *head_k = k     + i * c->head_size;
+        const float *head_v = v     + i * c->head_size;
+        const float *head_a = a     + i * c->head_size;
 
-    // y = group_norm(y, ln_w, ln_b)
-    group_norm(y, y, bw->att_ln_x_weight, bw->att_ln_x_bias, c->n_head, c->head_size);
+        const float *ln_w   = bw->att_ln_x_weight   + i * c->head_size;
+        const float *ln_b   = bw->att_ln_x_bias     + i * c->head_size;
+        const float *r_k    = bw->att_r_k           + i * c->head_size;
 
-    // y += ((r * k * r_k).sum(axis=1,keepdims=1) * v).flatten()
-    // TODO
-    float y_sum_[c->n_head];
-    for (int i = 0; i < c->n_head; i++) {
-        y_sum_[i] = 0.0;
-        for (int j = 0; j < c->head_size; j++) {
-            int idx = IDX(i, j, 0, c->head_size, 1);
-            y_sum_[i] += r[idx] * k[idx] * bw->att_r_k[idx];
-        }
-    }
-    for (int i = 0; i < c->n_head; i++) {
-        for (int j = 0; j < c->head_size; j++) {
-            int idx = IDX(i, j, 0, c->head_size, 1);
-            y[idx] += y_sum_[i] * v[idx];
-        }
-    }
+        // kk /= np.maximum(np.linalg.norm(kk, axis=1,keepdims=1), 1e-12)
+        do {
+            float kk_norm = 0.0;
+            for (int j = 0; j < c->head_size; j++) { kk_norm += SQUARE(head_kk[j]); }
+            kk_norm = sqrt(kk_norm);
+            for (int j = 0; j < c->head_size; j++) { head_kk[j] /= MAXIMUM(kk_norm, 1e-12f); }
+        } while(0); // kk /= np.maximum(np.linalg.norm(kk, axis=1,keepdims=1), 1e-12)
+
+        // RWKV v7 paper: S = S @ (diag(w) - kk @ (kk * a).mT) + v * k.mT
+        // - multiply S into the parentheses, 
+        // - to avoid non-contiguous memory access of column vectors in matrix computation
+        // - S = S * w.mT - S @ kk * (kk * a).mT + v * k.mT
+        do {
+            float state_mul_kk[c->head_size];
+            mat_mul_vec(state_mul_kk, head_kk, head_state, c->head_size, c->head_size); // S @ kk
+
+            float kk_mul_a[c->head_size];
+            HADAMARD(kk_mul_a, head_kk, head_a);                                        // kk * a
+
+            float tmp[c->head_size * c->head_size];
+            vec_out_product(tmp, state_mul_kk, kk_mul_a, c->head_size);                 // S @ kk * (kk*a).mT
+
+            float v_mul_k[c->head_size * c->head_size];
+            vec_out_product(v_mul_k, head_v, head_k, c->head_size);                     // v * k.mT
+
+            for (int j = 0; j < c->head_size; j++) {
+                float *state_row = head_state + j * c->head_size;
+                HADAMARD_L(state_row, state_row, head_w, c->head_size);                 // S = S * w.mT
+            }
+
+            VECSUB_L(head_state, head_state, tmp, c->head_size * c->head_size);         // S -= S @ kk * (kk * a).mT
+            VECADD_L(head_state, head_state, v_mul_k, c->head_size * c->head_size);     // S += v * k.mT
+        } while(0); // S = S * w.mT - S @ kk * (kk * a).mT + v * k.mT
+
+        // y = S @ r
+        mat_mul_vec(head_y, head_r, head_state, c->head_size, c->head_size);
+
+        // y = group_norm(y, ln_w, ln_b)
+        layer_norm(head_y, head_y, ln_w, ln_b, c->head_size, 64e-5f);
+
+        // y += ((r * k * r_k).sum(axis=1,keepdims=1) * v).flatten()
+        do {
+            float y_sum_ = 0.0f;
+            for (int j = 0; j < c->head_size; j++) {
+                y_sum_ += head_r[j] * head_k[j] * r_k[j];
+            }
+            for (int j = 0; j < c->head_size; j++) {
+                head_y[j] += y_sum_ * head_v[j];
+            }
+        } while(0); // y += ((r * k * r_k).sum(axis=1,keepdims=1) * v).flatten()
+    }   // multi-head
 
     // dx = Wo @ (y * g)
+    do {
     float y_mul_g[c->n_embd];
     HADAMARD(y_mul_g, y, g);
     mat_mul_vec(dx, y_mul_g, bw->att_output_weight, ARRLEN(y_mul_g), c->n_embd);
+    } while(0); // dx = Wo @ (y * g)
 
     // last_x = x
     memcpy(last_x, x, sizeof(float) * c->n_embd);
@@ -448,27 +402,27 @@ void channel_mixing(float *dx, const float *x, float *last_x, block_weights *bw,
 void forward(float *logits, rwkv_config *c, rwkv_weights *w, float *model_state[], int token) {
     float x[c->n_embd];
     memcpy(x, w->emb_weight + token * c->n_embd, sizeof(float) *ARRLEN(x));
-    layer_norm(x, x, w->blocks_0_ln0_weight, w->blocks_0_ln0_bias, ARRLEN(x));
+    layer_norm(x, x, w->blocks_0_ln0_weight, w->blocks_0_ln0_bias, ARRLEN(x), 1e-5f);
 
     float x_[c->n_embd];
     float v0[c->n_embd]; v0[0] = NAN;
     float dx[c->n_embd];
 
     for (int i = 0; i < c->n_layer; i++) {
-        layer_norm(x_, x, w->blocks[i].ln1_weight, w->blocks[i].ln1_bias, ARRLEN(x_));
+        layer_norm(x_, x, w->blocks[i].ln1_weight, w->blocks[i].ln1_bias, ARRLEN(x_), 1e-5f);
 
         int last_x_offset = IDX(i, 0, 0, 2, c->n_embd);
         int state_offset = i * c->n_head * c->head_size * c->head_size;
         time_mixing(dx, x_, v0, model_state[0] + last_x_offset, model_state[1] + state_offset, w->blocks + i, c);
         VECADD(x, x, dx);
 
-        layer_norm(x_, x, w->blocks[i].ln2_weight, w->blocks[i].ln2_bias, ARRLEN(x_));
+        layer_norm(x_, x, w->blocks[i].ln2_weight, w->blocks[i].ln2_bias, ARRLEN(x_), 1e-5f);
         last_x_offset = IDX(i, 1, 0, 2, c->n_embd);
         channel_mixing(dx, x_, model_state[0] + last_x_offset, w->blocks + i, c);
         VECADD(x, x, dx);
     }
 
-    layer_norm(x, x, w->ln_out_weight, w->ln_out_bias, ARRLEN(x));
+    layer_norm(x, x, w->ln_out_weight, w->ln_out_bias, ARRLEN(x), 1e-5f);
     mat_mul_vec(logits, x, w->head_weight, ARRLEN(x), c->vocab_size);
 }
 

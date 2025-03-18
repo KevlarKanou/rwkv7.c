@@ -28,7 +28,6 @@ make
 ```
 
 ## TODO
-- Rewrite operators in RWKV block
 - Optimize with vector instruction (AVX, NEON...)
 - Model quantization
 - Load generic model format (.pth, .gguf...)
