@@ -12,6 +12,10 @@
 
 #include "rwkv_vocab_v20230424.h"
 
+#ifdef AVX
+#include <immintrin.h>
+#endif
+
 #define SYSTIME_MS(X)               do { struct timespec time; clock_gettime(0, &time); X = time.tv_sec * 1000 + time.tv_nsec / 1000000; } while(0)
 #define ARRLEN(X)                   (int)(sizeof(X)/sizeof(X[0]))
 #define IDX(I, J, K, DIM2, DIM3)    ((I) * (DIM2) * (DIM3) + (J) * (DIM3) + (K))
@@ -21,11 +25,22 @@
 #define IS_NAN(X)                   (!((X) == (X)))
 #define MATxVEC(XOUT, X, W)         mat_mul_vec(XOUT, X, W, ARRLEN(X), ARRLEN(XOUT))
 #define VECxMAT(XOUT, X, W)         vec_mul_mat(XOUT, X, W, ARRLEN(X), ARRLEN(XOUT))
+#if defined(AVX)
+#define VECADD_L(XOUT, A, B, L)     _avx_vec_add(XOUT, A, B, L)
+#define VECSUB_L(XOUT, A, B, L)     _avx_vec_sub(XOUT, A, B, L)
+#define HADAMARD_L(XOUT, A, B, L)   _avx_hadamard(XOUT, A, B, L)
+#elif defined(NEON)
+// TODO
+#else
 #define VECADD_L(XOUT, A, B, L)     do { for (int i = 0; i < (L); i++) { XOUT[i] = A[i] + B[i]; } } while(0)
-#define VECADD(XOUT, A, B)          VECADD_L(XOUT, A, B, ARRLEN(XOUT))
 #define VECSUB_L(XOUT, A, B, L)     do { for (int i = 0; i < (L); i++) { XOUT[i] = A[i] - B[i]; } } while(0)
+#define HADAMARD_L(XOUT, A, B, L)   do { for (int i = 0; i < (L); i++) { XOUT[i] = A[i] * B[i]; } } while(0)
+
+#endif
+#define VECADD(XOUT, A, B)          VECADD_L(XOUT, A, B, ARRLEN(XOUT))
 #define VECSUB(XOUT, A, B)          VECSUB_L(XOUT, A, B, ARRLEN(XOUT))
-#define HADAMARD(XOUT, A, B)        do { for (int i = 0; i < ARRLEN(XOUT); i++) { XOUT[i] = A[i] * B[i]; } } while(0)
+#define HADAMARD(XOUT, A, B)        HADAMARD_L(XOUT, A, B, ARRLEN(XOUT))
+
 #define VECTANH(XOUT)               do { for (int i = 0; i < ARRLEN(XOUT); i++) { XOUT[i] = tanh(XOUT[i]); } } while(0)
 #define VECSIGM(XOUT)               do { for (int i = 0; i < ARRLEN(XOUT); i++) { XOUT[i] = 1.0 / (1.0 + exp(-XOUT[i])); } } while(0)
 #define LERP(XOUT, X, LAST_X, MU)   lerp(XOUT, X, LAST_X, MU, ARRLEN(XOUT))

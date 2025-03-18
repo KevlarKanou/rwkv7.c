@@ -8,7 +8,13 @@ default: $(BIN)
 $(BIN): $(SRC)
 	@$(CC) -o $(BIN) $(SRC) $(CFLAGS)
 
+avx: $(SRC)
+	@$(CC) -o $(BIN) $(SRC) -mavx -mfma -DAVX $(CFLAGS)
+
+avx2: $(SRC)
+	@$(CC) -o $(BIN) $(SRC) -mavx2 -mfma -DAVX -DAVX2 $(CFLAGS)
+
 clean:
 	@rm -f $(BIN)
 
-PHONY: clean
+PHONY: avx avx2 clean
