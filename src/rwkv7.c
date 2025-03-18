@@ -785,7 +785,7 @@ int main(int argc, char *argv[]) {
     int decoding_tokens = 0;
     for (decoding_tokens = 0; decoding_tokens < 10240; decoding_tokens++) {
         int next_token = sample_logits(logits, &config, &sampler);
-        if (next_token == 0) { break; }
+        if (next_token == 0) { printf("\n---Meet EOS!---\n"); break; }
 
         forward(logits, &config, &weights, model_state, next_token);
         const char *token_str = tokenizer.vocab[next_token];
