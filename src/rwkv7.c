@@ -721,7 +721,7 @@ int main(int argc, char *argv[]) {
     if (sampler.frequency_penalty   < 0.0) { sampler.frequency_penalty  = 0.0; }
     srand(seed);
 
-    printf("Hello, RWKV!, seed: %u\n\n", seed);
+    printf("Hello, RWKV! seed: %u\n\n", seed);
     rwkv_config config;
     rwkv_weights weights;
     rwkv_tokenizer tokenizer;
