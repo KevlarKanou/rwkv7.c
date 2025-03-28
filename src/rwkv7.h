@@ -19,6 +19,7 @@
 #include <arm_neon.h>
 #endif
 
+#define ERR(COND, MSG)              do { if (COND) { fprintf(stderr, "Error: %s\n", MSG); exit(EXIT_FAILURE); } } while(0)
 #define SYSTIME_MS(X)               do { struct timespec time; clock_gettime(0, &time); X = time.tv_sec * 1000 + time.tv_nsec / 1000000; } while(0)
 #define ARRLEN(X)                   (int)(sizeof(X)/sizeof(X[0]))
 #define IDX(I, J, K, DIM2, DIM3)    ((I) * (DIM2) * (DIM3) + (J) * (DIM3) + (K))

@@ -288,7 +288,7 @@ void lora(float *xout, const float *x, const float *weight_1, const float *weigh
         case LORA_NONE: break;
         case LORA_TANH: VECTANH(tmp); break;
         case LORA_SIGM: VECSIGM(tmp); break;
-        default: assert(0);
+        default: ERR(1, "unknown lora activation function");
     }
     vec_mul_mat(xout, tmp, weight_2, lora_rank, x_len);
 }
@@ -308,7 +308,7 @@ int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
 
 void encode(rwkv_tokenizer *t, char *text, int *tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
-    if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
+    ERR(text == NULL, "cannot encode NULL text");
 
     // create a temporary buffer that will store merge candidates of always two consecutive tokens
     // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
@@ -645,7 +645,7 @@ void forward(float *logits, rwkv_config *c, rwkv_weights *w, float *model_state[
 // load and free
 void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     FILE *fp = fopen(model_path, "r");
-    assert(fp);
+    ERR(fp == NULL, "failed to open model file");
 
     // get file size
     fseek(fp, 0, SEEK_END);
@@ -667,10 +667,10 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
         int32_t v_lora_r;
     } header;
     #pragma pack(pop)
-    if (fread(&header, sizeof(header), 1, fp) != 1) { exit(EXIT_FAILURE); }
+    ERR(fread(&header, sizeof(header), 1, fp) != 1, "failed to get model header");
 
-    assert(header.magic_number == 0x00632E37766B7772);
-    assert(header.quant == 0);
+    ERR(header.magic_number != 0x00632E37766B7772, "invalid model magic number");
+    ERR(header.quant != 0, "quantized model is not supported");
 
     // set model config
     c->head_size    = header.head_size;
@@ -688,7 +688,7 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
 
     size_t raw_weights_size = file_size - sizeof(header);
     w->raw = malloc(raw_weights_size);
-    if (fread(w->raw, sizeof(uint8_t), raw_weights_size, fp) != raw_weights_size) { exit(EXIT_FAILURE); }
+    ERR(fread(w->raw, sizeof(uint8_t), raw_weights_size, fp) != raw_weights_size, "failed to load model weights");
     fclose(fp);
 
     float *ptr = w->raw;
@@ -737,7 +737,7 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     w->ln_out_bias                  = ptr; ptr += c->n_embd                     ;
     w->head_weight                  = ptr; ptr += c->n_embd     * c->vocab_size ;
 
-    assert((ptr - w->raw) * sizeof(float) == raw_weights_size);
+    ERR((ptr - w->raw) * sizeof(float) != raw_weights_size, "failed to map model weights");
 }
 
 void free_model(rwkv_weights *w) {
@@ -758,7 +758,7 @@ void load_tokenizer(rwkv_tokenizer *t, int vocab_size) {
             sorted_vocab_idx++;
         }
     }
-    assert(sorted_vocab_idx == t->vocab_size);
+    ERR(sorted_vocab_idx != t->vocab_size, "failed to load vocabulary");
 
     qsort(t->sorted_vocab, t->vocab_size, sizeof(TokenIndex), compare_tokens);
     t->max_token_length = strlen(t->sorted_vocab[t->vocab_size-1].str);
@@ -769,7 +769,7 @@ void free_tokenizer(rwkv_tokenizer *t) {
 }
 
 // main
-void error_usage(char *argv[]) {
+void print_usage(char *argv[]) {
     fprintf(stderr, "Usage: %s [options] model_path\n", argv[0]);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  --chat                       enable chat mode\n");
@@ -811,7 +811,7 @@ int main(int argc, char *argv[]) {
             { sampler.frequency_penalty = atof(argv[i + 1]); i++; }
         else { model_path = argv[i]; }
     }
-    if ((msg == NULL) | (model_path == NULL)) { error_usage(argv); }
+    if ((msg == NULL) || (model_path == NULL)) { print_usage(argv); }
     if (sampler.temperature         < 0.0) { sampler.temperature        = 0.0; }
     if (sampler.top_p               < 0.0) { sampler.top_p              = 0.0; }
     if (sampler.presence_penalty    < 0.0) { sampler.presence_penalty   = 0.0; }
