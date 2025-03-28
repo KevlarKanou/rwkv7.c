@@ -15,6 +15,9 @@
 #ifdef AVX
 #include <immintrin.h>
 #endif
+#ifdef NEON
+#include <arm_neon.h>
+#endif
 
 #define SYSTIME_MS(X)               do { struct timespec time; clock_gettime(0, &time); X = time.tv_sec * 1000 + time.tv_nsec / 1000000; } while(0)
 #define ARRLEN(X)                   (int)(sizeof(X)/sizeof(X[0]))
@@ -30,7 +33,9 @@
 #define VECSUB_L(XOUT, A, B, L)     _avx_vec_sub(XOUT, A, B, L)
 #define HADAMARD_L(XOUT, A, B, L)   _avx_hadamard(XOUT, A, B, L)
 #elif defined(NEON)
-// TODO
+#define VECADD_L(XOUT, A, B, L)     _neon_vec_add(XOUT, A, B, L)
+#define VECSUB_L(XOUT, A, B, L)     _neon_vec_sub(XOUT, A, B, L)
+#define HADAMARD_L(XOUT, A, B, L)   _neon_hadamard(XOUT, A, B, L)
 #else
 #define VECADD_L(XOUT, A, B, L)     do { for (int i = 0; i < (L); i++) { XOUT[i] = A[i] + B[i]; } } while(0)
 #define VECSUB_L(XOUT, A, B, L)     do { for (int i = 0; i < (L); i++) { XOUT[i] = A[i] - B[i]; } } while(0)

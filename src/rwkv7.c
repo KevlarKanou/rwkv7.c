@@ -45,11 +45,52 @@ void _avx_hadamard(float *xout, const float *a, const float *b, int len) {
 }
 #endif
 
+#ifdef NEON
+static float _neon_horizontal_sum(float32x4_t v) {
+    float32x2_t v1 = vadd_f32(vget_low_f32(v), vget_high_f32(v));
+    v1 = vpadd_f32(v1, v1);
+    return vget_lane_f32(v1, 0);
+}
+
+void _neon_vec_add(float *xout, const float *a, const float *b, int len) {
+    int i;
+    for (i = 0; i <= len - 4; i += 4) {
+        float32x4_t a_vec = vld1q_f32(a + i);
+        float32x4_t b_vec = vld1q_f32(b + i);
+        float32x4_t sum_vec = vaddq_f32(a_vec, b_vec);
+        vst1q_f32(xout + i, sum_vec); 
+    }
+    for (; i < len; i++) { xout[i] = a[i] + b[i]; }
+}
+
+void _neon_vec_sub(float *xout, const float *a, const float *b, int len) {
+    int i;
+    for (i = 0; i <= len - 4; i += 4) {
+        float32x4_t a_vec = vld1q_f32(a + i);
+        float32x4_t b_vec = vld1q_f32(b + i);
+        float32x4_t sum_vec = vsubq_f32(a_vec, b_vec);
+        vst1q_f32(xout + i, sum_vec);
+    }
+    for (; i < len; i++) { xout[i] = a[i] - b[i]; }
+}
+
+void _neon_hadamard(float *xout, const float *a, const float *b, int len) {
+    int i;
+    for (i = 0; i <= len - 4; i += 4) {
+        float32x4_t a_vec = vld1q_f32(a + i);
+        float32x4_t b_vec = vld1q_f32(b + i);
+        float32x4_t prod_vec = vmulq_f32(a_vec, b_vec);
+        vst1q_f32(xout + i, prod_vec);
+    }
+    for (; i < len; i++) { xout[i] = a[i] * b[i]; }
+}
+#endif
+
 void mat_mul_vec(float *xout, const float *x, const float *w, int x_len, int xout_len) {
-    // W (d,n) @ x (n,) -> xout (d,)
+    // W (d,n) @ x (n,) -> xout (d,) 
     int d = xout_len;
     int n = x_len;
-#ifdef AVX
+#if defined(AVX)
     for (int i = 0; i < d; i++) {
         __m256 sum_vec = _mm256_setzero_ps();
         int j;
@@ -59,6 +100,20 @@ void mat_mul_vec(float *xout, const float *x, const float *w, int x_len, int xou
             sum_vec = _mm256_fmadd_ps(w_vec, x_vec, sum_vec);
         }
         float val = _avx_horizontal_sum(sum_vec);
+
+        for (; j < n; j++) { val += w[i * n + j] * x[j]; }
+        xout[i] = val;
+    }
+#elif defined(NEON)
+    for (int i = 0; i < d; i++) {
+        float32x4_t sum_vec = vdupq_n_f32(0);
+        int j;
+        for (j = 0; j <= n - 4; j += 4) {
+            float32x4_t w_vec = vld1q_f32(w + i * n + j);
+            float32x4_t x_vec = vld1q_f32(x + j);
+            sum_vec = vfmaq_f32(sum_vec, w_vec, x_vec);
+        }
+        float val = _neon_horizontal_sum(sum_vec);
 
         for (; j < n; j++) { val += w[i * n + j] * x[j]; }
         xout[i] = val;
@@ -78,7 +133,7 @@ void vec_mul_mat(float *xout, const float *x, const float *w, int x_len, int xou
     // x (n,) @ W (n,d) -> xout (d,)
     int d = xout_len;
     int n = x_len;
-#ifdef AVX
+#if defined(AVX)
     for (int i = 0; i < d; i++) {
         __m256 sum_vec = _mm256_setzero_ps();
         int j;
@@ -104,6 +159,22 @@ void vec_mul_mat(float *xout, const float *x, const float *w, int x_len, int xou
         for (; j < n; j++) { val += w[j * d + i] * x[j]; }
         xout[i] = val;
     }
+#elif defined(NEON)
+    for (int i = 0; i < d; i++) {
+        float32x4_t sum_vec = vdupq_n_f32(0);
+        int j;
+        for (j = 0; j <= n - 4; j += 4) {
+            float w_col[4];
+            for (int k = 0; k < 4; k++) { w_col[k] = w[(j + k) * d + i]; }
+            float32x4_t w_vec = vld1q_f32(w_col);
+            float32x4_t x_vec = vld1q_f32(x + j);
+            sum_vec = vfmaq_f32(sum_vec, w_vec, x_vec);
+        }
+        float val = _neon_horizontal_sum(sum_vec);
+
+        for (; j < n; j++) { val += w[j * d + i] * x[j]; }
+        xout[i] = val;
+    }
 #else
     for (int i = 0; i < d; i++) {
         float sum = 0.0f;
@@ -116,14 +187,26 @@ void vec_mul_mat(float *xout, const float *x, const float *w, int x_len, int xou
 }
 
 void vec_out_product(float *xout, const float *a, const float *b, int vec_len) {
-#ifdef AVX
+#if defined(AVX)
     for (int i = 0; i < vec_len; i++) {
         const __m256 a_vec = _mm256_set1_ps(a[i]);
         int j = 0;
         for (; j <= vec_len - 8; j += 8) {
-            const __m256 b_vec = _mm256_loadu_ps(&b[j]);
+            const __m256 b_vec = _mm256_loadu_ps(b + j);
             const __m256 result = _mm256_mul_ps(a_vec, b_vec);
             _mm256_storeu_ps(&xout[i * vec_len + j], result);
+        }
+        
+        for (; j < vec_len; j++) { xout[i * vec_len + j] = a[i] * b[j]; }
+    }
+#elif defined(NEON)
+    for (int i = 0; i < vec_len; i++) {
+        const float32x4_t a_vec = vdupq_n_f32(a[i]);
+        int j = 0;
+        for (; j <= vec_len - 4; j += 4) {
+            const float32x4_t b_vec = vld1q_f32(b + j);
+            const float32x4_t result = vmulq_f32(a_vec, b_vec);
+            vst1q_f32(&xout[i * vec_len + j], result);
         }
         
         for (; j < vec_len; j++) { xout[i * vec_len + j] = a[i] * b[j]; }
@@ -163,7 +246,7 @@ void softmax(float *xout, const float *x, float temp, int size) {
 }
 
 void lerp(float *xout, const float *x, const float *last_x, const float *mu, int x_len) {
-#ifdef AVX
+#if defined(AVX)
     int i;
     for (i = 0; i <= x_len - 8; i += 8) {
         __m256 x_vec = _mm256_loadu_ps(x + i);
@@ -173,6 +256,20 @@ void lerp(float *xout, const float *x, const float *last_x, const float *mu, int
         __m256 xout_vec = _mm256_sub_ps(last_x_vec, x_vec);
         xout_vec = _mm256_fmadd_ps(mu_vec, xout_vec, x_vec);
         _mm256_storeu_ps(xout + i, xout_vec);
+    }
+    for (; i < x_len; i++) {
+        xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);
+    }
+#elif defined(NEON)
+    int i;
+    for (i = 0; i <= x_len - 4; i += 4) {
+        float32x4_t x_vec = vld1q_f32(x + i);
+        float32x4_t last_x_vec = vld1q_f32(last_x + i);
+        float32x4_t mu_vec = vld1q_f32(mu + i);
+
+        float32x4_t xout_vec = vsubq_f32(last_x_vec, x_vec);
+        xout_vec = vfmaq_f32(x_vec, mu_vec, xout_vec);
+        vst1q_f32(xout + i, xout_vec);
     }
     for (; i < x_len; i++) {
         xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);

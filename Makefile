@@ -14,6 +14,9 @@ avx: $(SRC)
 avx2: $(SRC)
 	@$(CC) -o $(BIN) $(SRC) -mavx2 -mfma -DAVX -DAVX2 $(CFLAGS)
 
+neon: $(SRC)
+	@$(CC) -o $(BIN) $(SRC) -DNEON $(CFLAGS)
+
 clean:
 	@rm -f $(BIN)
 
