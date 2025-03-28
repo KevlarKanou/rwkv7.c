@@ -791,7 +791,7 @@ int main(int argc, char *argv[]) {
     const char *msg = NULL;
     const char *model_path = NULL;
 
-    if (argc < 2) { error_usage(argv); }
+    if (argc < 2) { print_usage(argv); }
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--chat") == 0) 
             { chat_mode = true; }
