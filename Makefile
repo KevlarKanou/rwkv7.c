@@ -20,4 +20,4 @@ neon: $(SRC)
 clean:
 	@rm -f $(BIN)
 
-PHONY: avx avx2 clean
+PHONY: avx avx2 neon clean
