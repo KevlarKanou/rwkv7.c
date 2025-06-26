@@ -129,63 +129,6 @@ void mat_mul_vec(float *xout, const float *x, const float *w, int x_len, int xou
 #endif
 }
 
-void vec_mul_mat(float *xout, const float *x, const float *w, int x_len, int xout_len) {
-    // x (n,) @ W (n,d) -> xout (d,)
-    int d = xout_len;
-    int n = x_len;
-#if defined(AVX)
-    for (int i = 0; i < d; i++) {
-        __m256 sum_vec = _mm256_setzero_ps();
-        int j;
-        for (j = 0; j <= n - 8; j += 8) {
-#ifdef AVX2
-            __m256i base = _mm256_set1_epi32(j * d + i);
-            __m256i offsets = _mm256_mullo_epi32(
-                _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7),
-                _mm256_set1_epi32(d)
-            );
-            __m256i indices = _mm256_add_epi32(base, offsets);
-            __m256 w_vec = _mm256_i32gather_ps(w, indices, 4);
-#else
-            float w_col[8];
-            for (int k = 0; k < 8; k++) { w_col[k] = w[(j + k) * d + i]; }
-            __m256 w_vec = _mm256_loadu_ps(w_col);
-#endif
-            __m256 x_vec = _mm256_loadu_ps(x + j);
-            sum_vec = _mm256_fmadd_ps(w_vec, x_vec, sum_vec);
-        }
-        float val = _avx_horizontal_sum(sum_vec);
-
-        for (; j < n; j++) { val += w[j * d + i] * x[j]; }
-        xout[i] = val;
-    }
-#elif defined(NEON)
-    for (int i = 0; i < d; i++) {
-        float32x4_t sum_vec = vdupq_n_f32(0);
-        int j;
-        for (j = 0; j <= n - 4; j += 4) {
-            float w_col[4];
-            for (int k = 0; k < 4; k++) { w_col[k] = w[(j + k) * d + i]; }
-            float32x4_t w_vec = vld1q_f32(w_col);
-            float32x4_t x_vec = vld1q_f32(x + j);
-            sum_vec = vfmaq_f32(sum_vec, w_vec, x_vec);
-        }
-        float val = _neon_horizontal_sum(sum_vec);
-
-        for (; j < n; j++) { val += w[j * d + i] * x[j]; }
-        xout[i] = val;
-    }
-#else
-    for (int i = 0; i < d; i++) {
-        float sum = 0.0f;
-        for (int j = 0; j < n; j++) {
-            sum += w[j * d + i] * x[j];
-        }
-        xout[i] = sum;
-    }
-#endif
-}
-
 void vec_out_product(float *xout, const float *a, const float *b, int vec_len) {
 #if defined(AVX)
     for (int i = 0; i < vec_len; i++) {
@@ -283,14 +226,14 @@ void lerp(float *xout, const float *x, const float *last_x, const float *mu, int
 
 void lora(float *xout, const float *x, const float *weight_1, const float *weight_2, int x_len, int lora_rank, lora_act func) {
     float tmp[lora_rank];
-    vec_mul_mat(tmp, x, weight_1, x_len, lora_rank);
+    mat_mul_vec(tmp, x, weight_1, x_len, lora_rank);
     switch (func) {
         case LORA_NONE: break;
         case LORA_TANH: VECTANH(tmp); break;
         case LORA_SIGM: VECSIGM(tmp); break;
         default: ERR(1, "unknown lora activation function");
     }
-    vec_mul_mat(xout, tmp, weight_2, lora_rank, x_len);
+    mat_mul_vec(xout, tmp, weight_2, lora_rank, x_len);
 }
 
 // utils for tokenizer
@@ -480,10 +423,10 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     float w[c->n_embd];
     do {
         float w_sigmoid_[c->n_embd];
-        lora(w_sigmoid_, xw, bw->att_w1, bw->att_w2, ARRLEN(xw), c->w_lora_r, LORA_TANH);   // np.tanh(xw @ Ww1) @ Ww2
-        VECADD(w_sigmoid_, w_sigmoid_, bw->att_w0);                                         // np.tanh(xw @ Ww1) @ Ww2 + w_bias
-        VECSIGM(w_sigmoid_);                                                                // sigmoid(...)
-        for (int i = 0; i < c->n_embd; i++) { w[i] = exp(-w_sigmoid_[i] / SQRT_E_VALUE); }  // exp(...)
+        lora(w_sigmoid_, xw, bw->att_w1_T, bw->att_w2_T, ARRLEN(xw), c->w_lora_r, LORA_TANH);   // np.tanh(xw @ Ww1) @ Ww2
+        VECADD(w_sigmoid_, w_sigmoid_, bw->att_w0);                                             // np.tanh(xw @ Ww1) @ Ww2 + w_bias
+        VECSIGM(w_sigmoid_);                                                                    // sigmoid(...)
+        for (int i = 0; i < c->n_embd; i++) { w[i] = exp(-w_sigmoid_[i] / SQRT_E_VALUE); }      // exp(...)
     } while(0); // w = np.exp(-sigmoid(np.tanh(xw @ Ww1) @ Ww2 + w_bias)/np.e**0.5)
 
     // k = Wk @ xk
@@ -500,21 +443,21 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     else {
         // v += (v0 - v) * sigmoid(xv @ Wv1 @ Wv2 + v_bias)
         float v_sigmoid_[c->n_embd];
-        lora(v_sigmoid_, xv, bw->att_v1, bw->att_v2, ARRLEN(xv), c->v_lora_r, LORA_NONE);   // xv @ Wv1 @ Wv2
-        VECADD(v_sigmoid_, v_sigmoid_, bw->att_v0);                                         // xv @ Wv1 @ Wv2 + v_bias
-        VECSIGM(v_sigmoid_);                                                                // sigmoid(...)
-        for (int i = 0; i < ARRLEN(v); i++) { v[i] += (v0[i] - v[i]) * v_sigmoid_[i]; }     // (v0 - v) * sigmoid(...)
+        lora(v_sigmoid_, xv, bw->att_v1_T, bw->att_v2_T, ARRLEN(xv), c->v_lora_r, LORA_NONE);   // xv @ Wv1 @ Wv2
+        VECADD(v_sigmoid_, v_sigmoid_, bw->att_v0);                                             // xv @ Wv1 @ Wv2 + v_bias
+        VECSIGM(v_sigmoid_);                                                                    // sigmoid(...)
+        for (int i = 0; i < ARRLEN(v); i++) { v[i] += (v0[i] - v[i]) * v_sigmoid_[i]; }         // (v0 - v) * sigmoid(...)
     }
 
     // a = sigmoid(xa @ Wa1 @ Wa2 + a_bias)
     float a[c->n_embd];
-    lora(a, xa, bw->att_a1, bw->att_a2, ARRLEN(xa), c->a_lora_r, LORA_NONE);    // xa @ Wa1 @ Wa2
-    VECADD(a, a, bw->att_a0);                                                   // xa @ Wa1 @ Wa2 + a_bias
-    VECSIGM(a);                                                                 // sigmoid(...)
+    lora(a, xa, bw->att_a1_T, bw->att_a2_T, ARRLEN(xa), c->a_lora_r, LORA_NONE);    // xa @ Wa1 @ Wa2
+    VECADD(a, a, bw->att_a0);                                                       // xa @ Wa1 @ Wa2 + a_bias
+    VECSIGM(a);                                                                     // sigmoid(...)
 
     // g = sigmoid(xg @ Wg1) @ Wg2
     float g[c->n_embd];
-    lora(g, xg, bw->att_g1, bw->att_g2, ARRLEN(xg), c->g_lora_r, LORA_SIGM);
+    lora(g, xg, bw->att_g1_T, bw->att_g2_T, ARRLEN(xg), c->g_lora_r, LORA_SIGM);
 
     // kk = k * k_k
     float kk[c->n_embd];
@@ -643,6 +586,17 @@ void forward(float *logits, rwkv_config *c, rwkv_weights *w, float *model_state[
 }
 
 // load and free
+void mat_transpose(float *mat, int rows, int cols) {
+    float *tmp = malloc(rows * cols * sizeof(float));
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            tmp[j * rows + i] = mat[i * cols + j];
+        }
+    }
+    memcpy(mat, tmp, rows * cols * sizeof(float));
+    free(tmp);
+}
+
 void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     FILE *fp = fopen(model_path, "r");
     ERR(fp == NULL, "failed to open model file");
@@ -709,16 +663,16 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
         b->att_x_g                  = ptr; ptr += c->n_embd                     ;
         b->att_w0                   = ptr; ptr += c->n_embd                     ;
         b->att_r_k                  = ptr; ptr += c->n_head     * c->head_size  ;
-        b->att_w1                   = ptr; ptr += c->n_embd     * c->w_lora_r   ;
-        b->att_w2                   = ptr; ptr += c->w_lora_r   * c->n_embd     ;
-        b->att_a1                   = ptr; ptr += c->n_embd     * c->a_lora_r   ;
-        b->att_a2                   = ptr; ptr += c->a_lora_r   * c->n_embd     ;
+        b->att_w1_T                 = ptr; ptr += c->n_embd     * c->w_lora_r   ;
+        b->att_w2_T                 = ptr; ptr += c->w_lora_r   * c->n_embd     ;
+        b->att_a1_T                 = ptr; ptr += c->n_embd     * c->a_lora_r   ;
+        b->att_a2_T                 = ptr; ptr += c->a_lora_r   * c->n_embd     ;
         b->att_a0                   = ptr; ptr += c->n_embd                     ;
-        b->att_g1                   = ptr; ptr += c->n_embd     * c->g_lora_r   ;
-        b->att_g2                   = ptr; ptr += c->g_lora_r   * c->n_embd     ;
+        b->att_g1_T                 = ptr; ptr += c->n_embd     * c->g_lora_r   ;
+        b->att_g2_T                 = ptr; ptr += c->g_lora_r   * c->n_embd     ;
         if (i != 0) {
-            b->att_v2               = ptr; ptr += c->v_lora_r   * c->n_embd     ;
-            b->att_v1               = ptr; ptr += c->n_embd     * c->v_lora_r   ;
+            b->att_v2_T             = ptr; ptr += c->v_lora_r   * c->n_embd     ;
+            b->att_v1_T             = ptr; ptr += c->n_embd     * c->v_lora_r   ;
             b->att_v0               = ptr; ptr += c->n_embd                     ;
         }
         b->att_k_k                  = ptr; ptr += c->n_embd                     ;
@@ -738,6 +692,21 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     w->head_weight                  = ptr; ptr += c->n_embd     * c->vocab_size ;
 
     ERR((ptr - w->raw) * sizeof(float) != raw_weights_size, "failed to map model weights");
+
+    // transpose all lora weight matrices
+    for (int i = 0; i < c->n_layer; i++) {
+        block_weights *b = w->blocks + i;
+        if (i != 0) {
+            mat_transpose((float *)b->att_v1_T, c->n_embd, c->v_lora_r);
+            mat_transpose((float *)b->att_v2_T, c->v_lora_r, c->n_embd);
+        }
+        mat_transpose((float *)b->att_w1_T, c->n_embd, c->w_lora_r);
+        mat_transpose((float *)b->att_w2_T, c->w_lora_r, c->n_embd);
+        mat_transpose((float *)b->att_a1_T, c->n_embd, c->a_lora_r);
+        mat_transpose((float *)b->att_a2_T, c->a_lora_r, c->n_embd);
+        mat_transpose((float *)b->att_g1_T, c->n_embd, c->g_lora_r);
+        mat_transpose((float *)b->att_g2_T, c->g_lora_r, c->n_embd);
+    }
 }
 
 void free_model(rwkv_weights *w) {

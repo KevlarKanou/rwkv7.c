@@ -28,7 +28,6 @@
 #define RELU(X)                     MAXIMUM(X, 0)
 #define IS_NAN(X)                   (!((X) == (X)))
 #define MATxVEC(XOUT, X, W)         mat_mul_vec(XOUT, X, W, ARRLEN(X), ARRLEN(XOUT))
-#define VECxMAT(XOUT, X, W)         vec_mul_mat(XOUT, X, W, ARRLEN(X), ARRLEN(XOUT))
 #if defined(AVX)
 #define VECADD_L(XOUT, A, B, L)     _avx_vec_add(XOUT, A, B, L)
 #define VECSUB_L(XOUT, A, B, L)     _avx_vec_sub(XOUT, A, B, L)
@@ -83,15 +82,15 @@ typedef struct {
     const float *att_x_g                ;
     const float *att_w0                 ;
     const float *att_r_k                ;
-    const float *att_w1                 ;
-    const float *att_w2                 ;
-    const float *att_a1                 ;
-    const float *att_a2                 ;
+    const float *att_w1_T               ;
+    const float *att_w2_T               ;
+    const float *att_a1_T               ;
+    const float *att_a2_T               ;
     const float *att_a0                 ;
-    const float *att_g1                 ;
-    const float *att_g2                 ;
-    const float *att_v2                 ;
-    const float *att_v1                 ;
+    const float *att_g1_T               ;
+    const float *att_g2_T               ;
+    const float *att_v2_T               ;
+    const float *att_v1_T               ;
     const float *att_v0                 ;
     const float *att_k_k                ;
     const float *att_k_a                ;
