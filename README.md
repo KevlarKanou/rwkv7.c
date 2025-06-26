@@ -18,7 +18,7 @@ rwkv7-g1-0.1b-20250307-ctx4096.pth
 ``` shell
 wget "https://huggingface.co/BlinkDL/rwkv-7-world/resolve/main/RWKV-x070-World-0.4B-v2.9-20250107-ctx4096.pth" -O model.pth
 python ./utils/export.py ./model.pth ./model.bin # pip install torch rwkv
-make # make avx/avx2/neon
+make # make avx/neon
 
 # default params: temperature = 1.0, top-p = 0.7, presence_penalty = 0.1, frequency_penalty = 0.2
 # generate mode
