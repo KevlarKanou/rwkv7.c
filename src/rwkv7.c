@@ -16,8 +16,8 @@ void _avx_vec_add(float *xout, const float *a, const float *b, int len) {
     for (i = 0; i <= len - 8; i += 8) {
         __m256 a_vec = _mm256_loadu_ps(a + i);
         __m256 b_vec = _mm256_loadu_ps(b + i);
-        __m256 sum_vec = _mm256_add_ps(a_vec, b_vec);
-        _mm256_storeu_ps(xout + i, sum_vec);
+        __m256 add_vec = _mm256_add_ps(a_vec, b_vec);
+        _mm256_storeu_ps(xout + i, add_vec);
     }
     for (; i < len; i++) { xout[i] = a[i] + b[i]; }
 }
@@ -27,8 +27,8 @@ void _avx_vec_sub(float *xout, const float *a, const float *b, int len) {
     for (i = 0; i <= len - 8; i += 8) {
         __m256 a_vec = _mm256_loadu_ps(a + i);
         __m256 b_vec = _mm256_loadu_ps(b + i);
-        __m256 sum_vec = _mm256_sub_ps(a_vec, b_vec);
-        _mm256_storeu_ps(xout + i, sum_vec);
+        __m256 sub_vec = _mm256_sub_ps(a_vec, b_vec);
+        _mm256_storeu_ps(xout + i, sub_vec);
     }
     for (; i < len; i++) { xout[i] = a[i] - b[i]; }
 }
@@ -38,8 +38,8 @@ void _avx_hadamard(float *xout, const float *a, const float *b, int len) {
     for (i = 0; i <= len - 8; i += 8) {
         __m256 a_vec = _mm256_loadu_ps(a + i);
         __m256 b_vec = _mm256_loadu_ps(b + i);
-        __m256 sum_vec = _mm256_mul_ps(a_vec, b_vec);
-        _mm256_storeu_ps(xout + i, sum_vec);
+        __m256 prod_vec = _mm256_mul_ps(a_vec, b_vec);
+        _mm256_storeu_ps(xout + i, prod_vec);
     }
     for (; i < len; i++) { xout[i] = a[i] * b[i]; }
 }
@@ -57,8 +57,8 @@ void _neon_vec_add(float *xout, const float *a, const float *b, int len) {
     for (i = 0; i <= len - 4; i += 4) {
         float32x4_t a_vec = vld1q_f32(a + i);
         float32x4_t b_vec = vld1q_f32(b + i);
-        float32x4_t sum_vec = vaddq_f32(a_vec, b_vec);
-        vst1q_f32(xout + i, sum_vec); 
+        float32x4_t add_vec = vaddq_f32(a_vec, b_vec);
+        vst1q_f32(xout + i, add_vec); 
     }
     for (; i < len; i++) { xout[i] = a[i] + b[i]; }
 }
@@ -68,8 +68,8 @@ void _neon_vec_sub(float *xout, const float *a, const float *b, int len) {
     for (i = 0; i <= len - 4; i += 4) {
         float32x4_t a_vec = vld1q_f32(a + i);
         float32x4_t b_vec = vld1q_f32(b + i);
-        float32x4_t sum_vec = vsubq_f32(a_vec, b_vec);
-        vst1q_f32(xout + i, sum_vec);
+        float32x4_t sub_vec = vsubq_f32(a_vec, b_vec);
+        vst1q_f32(xout + i, sub_vec);
     }
     for (; i < len; i++) { xout[i] = a[i] - b[i]; }
 }
