@@ -174,123 +174,123 @@ void mat_mul_vec(float *xout, const float *x, const float *w, int x_len, int xou
 #endif
 }
 
-float vec_dot_product(const float *a, const float *b, int vec_len) {
+float vec_dot_product(const float *a, const float *b, int len) {
     float ret = 0.0;
 #if defined(AVX)
     __m256 sum_vec = _mm256_setzero_ps();
     int i;
-    for (i = 0; i <= vec_len - 8; i += 8) {
+    for (i = 0; i <= len - 8; i += 8) {
         __m256 a_vec = _mm256_loadu_ps(a + i);
         __m256 b_vec = _mm256_loadu_ps(b + i);
         __m256 prod_vec = _mm256_mul_ps(a_vec, b_vec);
         sum_vec = _mm256_add_ps(sum_vec, prod_vec);
     }
     ret = _avx_horizontal_sum(sum_vec);
-    for (; i < vec_len; i++) { ret += a[i] * b[i]; }
+    for (; i < len; i++) { ret += a[i] * b[i]; }
 #elif defined(NEON)
     float32x4_t sum_vec = vdupq_n_f32(0);
     int i;
-    for (i = 0; i <= vec_len - 4; i += 4) {
+    for (i = 0; i <= len - 4; i += 4) {
         float32x4_t a_vec = vld1q_f32(a + i);
         float32x4_t b_vec = vld1q_f32(b + i);
         float32x4_t prod_vec = vmulq_f32(a_vec, b_vec);
         sum_vec = vaddq_f32(sum_vec, prod_vec);
     }
     ret = _neon_horizontal_sum(sum_vec);
-    for (; i < vec_len; i++) { ret = a[i] * b[i]; }
+    for (; i < len; i++) { ret = a[i] * b[i]; }
 #else
-    for (int i = 0; i < vec_len; i++) { ret += a[i] * b[i]; }
+    for (int i = 0; i < len; i++) { ret += a[i] * b[i]; }
 #endif
     return ret;
 }
 
-void vec_out_product(float *xout, const float *a, const float *b, int vec_len) {
+void vec_out_product(float *xout, const float *a, const float *b, int len) {
 #if defined(AVX)
-    for (int i = 0; i < vec_len; i++) {
+    for (int i = 0; i < len; i++) {
         const __m256 a_vec = _mm256_set1_ps(a[i]);
         int j = 0;
-        for (; j <= vec_len - 8; j += 8) {
+        for (; j <= len - 8; j += 8) {
             const __m256 b_vec = _mm256_loadu_ps(b + j);
             const __m256 result = _mm256_mul_ps(a_vec, b_vec);
-            _mm256_storeu_ps(&xout[i * vec_len + j], result);
+            _mm256_storeu_ps(&xout[i * len + j], result);
         }
         
-        for (; j < vec_len; j++) { xout[i * vec_len + j] = a[i] * b[j]; }
+        for (; j < len; j++) { xout[i * len + j] = a[i] * b[j]; }
     }
 #elif defined(NEON)
-    for (int i = 0; i < vec_len; i++) {
+    for (int i = 0; i < len; i++) {
         const float32x4_t a_vec = vdupq_n_f32(a[i]);
         int j = 0;
-        for (; j <= vec_len - 4; j += 4) {
+        for (; j <= len - 4; j += 4) {
             const float32x4_t b_vec = vld1q_f32(b + j);
             const float32x4_t result = vmulq_f32(a_vec, b_vec);
-            vst1q_f32(&xout[i * vec_len + j], result);
+            vst1q_f32(&xout[i * len + j], result);
         }
         
-        for (; j < vec_len; j++) { xout[i * vec_len + j] = a[i] * b[j]; }
+        for (; j < len; j++) { xout[i * len + j] = a[i] * b[j]; }
     }
 #else
-    for (int i = 0; i < vec_len; i++) {
-        for (int j = 0; j < vec_len; j++) { xout[i * vec_len + j] = a[i] * b[j]; }
+    for (int i = 0; i < len; i++) {
+        for (int j = 0; j < len; j++) { xout[i * len + j] = a[i] * b[j]; }
     }
 #endif
 }
 
-float vec_sum(const float *x, int vec_len) {
+float vec_sum(const float *x, int len) {
     float ret = 0.0f;
 #if defined(AVX)
     __m256 sum_vec = _mm256_setzero_ps();
     int i;
-    for (i = 0; i <= vec_len - 8; i += 8) {
+    for (i = 0; i <= len - 8; i += 8) {
         __m256 x_vec = _mm256_loadu_ps(x + i);
         sum_vec = _mm256_add_ps(sum_vec, x_vec);
     }
     ret = _avx_horizontal_sum(sum_vec);
-    for (; i < vec_len; i++) { ret += x[i]; }
+    for (; i < len; i++) { ret += x[i]; }
 #elif defined(NEON)
     float32x4_t sum_vec = vdupq_n_f32(0);
     int i;
-    for (i = 0; i <= vec_len - 4; i += 4) {
+    for (i = 0; i <= len - 4; i += 4) {
         float32x4_t x_vec = vld1q_f32(x + i);
         sum_vec = vaddq_f32(sum_vec, x_vec);
     }
     ret = _neon_horizontal_sum(sum_vec);
-    for (; i < vec_len; i++) { ret += x[i]; }
+    for (; i < len; i++) { ret += x[i]; }
 #else
-    for (int i = 0; i < vec_len; i++) { ret += x[i]; }
+    for (int i = 0; i < len; i++) { ret += x[i]; }
 #endif
     return ret;
 }
 
-void layer_norm(float *xout, const float *x, const float *weight, const float *bias, int size, float sqrt_bias) {
-    float x_mean = vec_sum(x, size) / size;
+void layer_norm(float *xout, const float *x, const float *weight, const float *bias, int len, float sqrt_bias) {
+    float x_mean = vec_sum(x, len) / len;
 
-    float x_centered[size];
+    float x_centered[len];
     VECBIAS(x_centered, x, -x_mean);
-    float x_var = vec_dot_product(x_centered, x_centered, size) / size;
+    float x_var = vec_dot_product(x_centered, x_centered, len) / len;
 
-    VECSCALE_L(xout, x_centered, 1.0f/sqrt(x_var + sqrt_bias), size);
-    HADAMARD_L(xout, xout, weight, size);
-    VECADD_L(xout, xout, bias, size);
+    VECSCALE_L(xout, x_centered, 1.0f/sqrt(x_var + sqrt_bias), len);
+    HADAMARD_L(xout, xout, weight, len);
+    VECADD_L(xout, xout, bias, len);
 }
 
-void softmax(float *xout, const float *x, float temp, int size) {
+void softmax(float *xout, const float *x, float temp, int len) {
     float max = 0.0;
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < len; i++) {
         if (x[i] > max) { max = x[i]; }
     }
     float sum = 0.0f;
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < len; i++) {
         xout[i] = exp((x[i] - max) / temp);
         sum += xout[i];
     }
-    for (int i = 0; i < size; i++) { xout[i] /= sum; }
+    for (int i = 0; i < len; i++) { xout[i] /= sum; }
 }
 
-void lerp(float *xout, const float *x, const float *last_x, const float *mu, int x_len) {
+void lerp(float *xout, const float *x, const float *last_x, const float *mu, int len) {
 #if defined(AVX)
     int i;
-    for (i = 0; i <= x_len - 8; i += 8) {
+    for (i = 0; i <= len - 8; i += 8) {
         __m256 x_vec = _mm256_loadu_ps(x + i);
         __m256 last_x_vec = _mm256_loadu_ps(last_x + i);
         __m256 mu_vec = _mm256_loadu_ps(mu + i);
@@ -299,12 +299,12 @@ void lerp(float *xout, const float *x, const float *last_x, const float *mu, int
         xout_vec = _mm256_fmadd_ps(mu_vec, xout_vec, x_vec);
         _mm256_storeu_ps(xout + i, xout_vec);
     }
-    for (; i < x_len; i++) {
+    for (; i < len; i++) {
         xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);
     }
 #elif defined(NEON)
     int i;
-    for (i = 0; i <= x_len - 4; i += 4) {
+    for (i = 0; i <= len - 4; i += 4) {
         float32x4_t x_vec = vld1q_f32(x + i);
         float32x4_t last_x_vec = vld1q_f32(last_x + i);
         float32x4_t mu_vec = vld1q_f32(mu + i);
@@ -313,11 +313,11 @@ void lerp(float *xout, const float *x, const float *last_x, const float *mu, int
         xout_vec = vfmaq_f32(x_vec, mu_vec, xout_vec);
         vst1q_f32(xout + i, xout_vec);
     }
-    for (; i < x_len; i++) {
+    for (; i < len; i++) {
         xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);
     }
 #else
-    for (int i = 0; i < x_len; i++) {
+    for (int i = 0; i < len; i++) {
         xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);
     }
 #endif
