@@ -9,8 +9,12 @@ Inference RWKV v7 in **pure C**.
 ```
 RWKV-x070-World-0.1B-v2.8-20241210-ctx4096.pth
 RWKV-x070-World-0.4B-v2.9-20250107-ctx4096.pth
+RWKV-x070-World-1.5B-v3-20250127-ctx4096.pth
 RWKV-x070-World-2.9B-v3-20250211-ctx4096.pth
 rwkv7-g1-0.1b-20250307-ctx4096.pth
+rwkv7-g1-0.4b-20250324-ctx4096.pth
+rwkv7-g1-1.5b-20250429-ctx4096.pth
+rwkv7-g1-2.9b-20250519-ctx4096.pth
 ```
 
 ## Usage
@@ -30,6 +34,5 @@ make # make avx/neon
 ```
 
 ## TODO
-- Optimize with vector instruction (AVX, NEON...)
+- FP16 support, mainly on ARM NEON
 - Model quantization
-- Load generic model format (.pth, .gguf...)
