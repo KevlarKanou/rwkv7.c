@@ -197,7 +197,7 @@ float vec_dot_product(const float *a, const float *b, int len) {
         sum_vec = vaddq_f32(sum_vec, prod_vec);
     }
     ret = _neon_horizontal_sum(sum_vec);
-    for (; i < len; i++) { ret = a[i] * b[i]; }
+    for (; i < len; i++) { ret += a[i] * b[i]; }
 #else
     for (int i = 0; i < len; i++) { ret += a[i] * b[i]; }
 #endif
