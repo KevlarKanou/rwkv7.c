@@ -70,7 +70,7 @@ static float vec_dot_product(const float *a, const float *b, int len) {
     for (; i <= len - 4; i += 4) {
         float32x4_t a_vec = vld1q_f32(a + i);
         float32x4_t b_vec = vld1q_f32(b + i);
-        sum_vec = vfmaq_f32(sum_vec, w_vec, x_vec);
+        sum_vec = vfmaq_f32(sum_vec, a_vec, b_vec);
     }
     ret = _neon_horizontal_sum(sum_vec);
     for (; i < len; i++) { ret += a[i] * b[i]; }
