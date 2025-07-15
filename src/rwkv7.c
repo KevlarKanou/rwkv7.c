@@ -905,23 +905,15 @@ int main(int argc, char *argv[]) {
 
     sampler.occurrence = calloc(config.vocab_size, sizeof(int));
 
-    char *context = NULL;
-    int context_len = 0;
-    if (chat_mode && !reasoner_mode) {
-        context_len = strlen(msg) + strlen("User: \n\nAssistant:");
-        context = malloc(context_len + 1);
-        sprintf(context, "User: %s\n\nAssistant:", msg);
-    }
-    else if (chat_mode && reasoner_mode) {
-        context_len = strlen(msg) + strlen("User: \n\nAssistant:<think>");
-        context = malloc(context_len + 1);
-        sprintf(context, "User: %s\n\nAssistant:<think>", msg);
-    }
-    else {
-        context_len = strlen(msg);
-        context = malloc(context_len + 1);
-        sprintf(context, "%s", msg);
-    }
+    const char *prompt_tmpl = "%s";
+    if (chat_mode && !reasoner_mode)
+        { prompt_tmpl = "User: %s\n\nAssistant:"; }
+    else if (chat_mode && reasoner_mode)
+        { prompt_tmpl = "User: %s\n\nAssistant:<think>"; }
+
+    int context_len = snprintf(NULL, 0, prompt_tmpl, msg);
+    char *context = malloc(context_len + 1);
+    sprintf(context, prompt_tmpl, msg);
 
     int token_list[context_len];
     int prefilling_tokens = 0;
