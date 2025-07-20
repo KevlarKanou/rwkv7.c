@@ -14,7 +14,13 @@ avx: $(SRC)
 neon: $(SRC)
 	@$(CC) -o $(BIN) $(SRC) -DNEON $(CFLAGS)
 
-clean:
-	@rm -f $(BIN)
+fp16: $(SRC)
+	@$(CC) -o rwkv7-fp16 $(SRC) -DUSE_FP16 $(CFLAGS)
 
-PHONY: avx neon clean
+neon-fp16: $(SRC)
+	@$(CC) -o rwkv7-neon-fp16 $(SRC) -march=armv8.2-a+fp16 -DUSE_FP16 -DNEON_FP16 $(CFLAGS)
+
+clean:
+	@rm -f $(BIN) rwkv7-fp16 rwkv7-neon-fp16
+
+PHONY: avx neon neon-fp16 clean

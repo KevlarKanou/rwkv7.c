@@ -1,53 +1,53 @@
 #include "rwkv7.h"    
 
 // operators
-#if !defined(AVX) && !defined(NEON)
-void vec_add(float *xout, const float *a, const float *b, int len) {
+#if !defined(AVX) && !defined(NEON) && !defined(NEON_FP16)
+void vec_add(Float *xout, const Float *a, const Float *b, int len) {
     for (int i = 0; i < len; i++) { xout[i] = a[i] + b[i]; }
 }
 
-void vec_sub(float *xout, const float *a, const float *b, int len) {
+void vec_sub(Float *xout, const Float *a, const Float *b, int len) {
     for (int i = 0; i < len; i++) { xout[i] = a[i] - b[i]; }
 }
 
-void vec_hadamard(float *xout, const float *a, const float *b, int len) {
+void vec_hadamard(Float *xout, const Float *a, const Float *b, int len) {
     for (int i = 0; i < len; i++) { xout[i] = a[i] * b[i]; }
 }
 
-void vec_bias(float *xout, const float *a, float b, int len) {
+void vec_bias(Float *xout, const Float *a, Float b, int len) {
     for (int i = 0; i < len; i++) { xout[i] = a[i] + b; }
 }
 
-void vec_scale(float *xout, const float *a, float b, int len) {
+void vec_scale(Float *xout, const Float *a, Float b, int len) {
     for (int i = 0; i < len; i++) { xout[i] = a[i] * b; }
 }
 
-static inline float vec_dot_product(const float *a, const float *b, int len) {
+static inline float vec_dot_product(const Float *a, const Float *b, int len) {
     float ret = 0.0;
     for (int i = 0; i < len; i++) { ret += a[i] * b[i]; }
     return ret;
 }
 
-void vec_out_product(float *xout, const float *a, const float *b, int len) {
+void vec_out_product(Float *xout, const Float *a, const Float *b, int len) {
     for (int i = 0; i < len; i++) {
         for (int j = 0; j < len; j++) { xout[i * len + j] = a[i] * b[j]; }
     }
 }
 
-float vec_sum(const float *x, int len) {
+float vec_sum(const Float *x, int len) {
     float ret = 0.0f;
     for (int i = 0; i < len; i++) { ret += x[i]; }
     return ret;
 }
 
-void lerp(float *xout, const float *x, const float *last_x, const float *mu, int len) {
+void lerp(Float *xout, const Float *x, const Float *last_x, const Float *mu, int len) {
     for (int i = 0; i < len; i++) {
         xout[i] = x[i] + mu[i] * (last_x[i] - x[i]);
     }
 }
 #endif
 
-void mat_mul_vec(float *xout, const float *x, const float *w, int x_len, int xout_len) {
+void mat_mul_vec(Float *xout, const Float *x, const Float *w, int x_len, int xout_len) {
     // W (d,n) @ x (n,) -> xout (d,) 
     int d = xout_len;
     int n = x_len;
@@ -56,20 +56,20 @@ void mat_mul_vec(float *xout, const float *x, const float *w, int x_len, int xou
     }
 }
 
-void layer_norm(float *xout, const float *x, const float *weight, const float *bias, int len, float sqrt_bias) {
-    float x_mean = vec_sum(x, len) / len;
+void layer_norm(Float *xout, const Float *x, const Float *weight, const Float *bias, int len, Float sqrt_bias) {
+    Float x_mean = vec_sum(x, len) / len;
 
-    float x_centered[len];
+    Float x_centered[len];
     VECBIAS(x_centered, x, -x_mean);
-    float x_var = vec_dot_product(x_centered, x_centered, len) / len;
+    Float x_var = vec_dot_product(x_centered, x_centered, len) / len;
 
     vec_scale(xout, x_centered, 1.0f/sqrt(x_var + sqrt_bias), len);
     vec_hadamard(xout, xout, weight, len);
     vec_add(xout, xout, bias, len);
 }
 
-void softmax(float *xout, const float *x, float temp, int len) {
-    float max = 0.0;
+void softmax(Float *xout, const Float *x, Float temp, int len) {
+    Float max = 0.0;
     for (int i = 0; i < len; i++) {
         if (x[i] > max) { max = x[i]; }
     }
@@ -81,8 +81,8 @@ void softmax(float *xout, const float *x, float temp, int len) {
     for (int i = 0; i < len; i++) { xout[i] /= sum; }
 }
 
-void lora(float *xout, const float *x, const float *weight_1, const float *weight_2, int x_len, int lora_rank, lora_act func) {
-    float tmp[lora_rank];
+void lora(Float *xout, const Float *x, const Float *weight_1, const Float *weight_2, int x_len, int lora_rank, lora_act func) {
+    Float tmp[lora_rank];
     mat_mul_vec(tmp, x, weight_1, x_len, lora_rank);
     switch (func) {
         case LORA_NONE: break;
@@ -212,7 +212,7 @@ int compare_probs(const void* a, const void* b) {
     return 0;
 }
 
-int sample_logits(float* logits, rwkv_config *c, rwkv_sampler *s) {
+int sample_logits(Float* logits, rwkv_config *c, rwkv_sampler *s) {
     int next = 0;
     // apply repetition penalty to logits
     for (int i = 0; i < c->vocab_size; i++) {
@@ -263,8 +263,8 @@ int sample_logits(float* logits, rwkv_config *c, rwkv_sampler *s) {
 }
 
 // RWKV block
-void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *state, block_weights *bw, rwkv_config *c) {
-    float xr[c->n_embd], xw[c->n_embd], xk[c->n_embd], xv[c->n_embd], xa[c->n_embd], xg[c->n_embd];
+void time_mixing(Float *dx, const Float *x, Float *v0, Float *last_x, Float *state, block_weights *bw, rwkv_config *c) {
+    Float xr[c->n_embd], xw[c->n_embd], xk[c->n_embd], xv[c->n_embd], xa[c->n_embd], xg[c->n_embd];
     LERP(xr, x, last_x, bw->att_x_r);
     LERP(xw, x, last_x, bw->att_x_w);
     LERP(xk, x, last_x, bw->att_x_k);
@@ -273,13 +273,13 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     LERP(xg, x, last_x, bw->att_x_g);
 
     // r = Wr @ xr
-    float r[c->n_embd];
+    Float r[c->n_embd];
     MATxVEC(r, xr, bw->att_receptance_weight);
 
     // w = np.exp(-sigmoid(np.tanh(xw @ Ww1) @ Ww2 + w_bias)/np.e**0.5)
-    float w[c->n_embd];
+    Float w[c->n_embd];
     do {
-        float w_sigmoid_[c->n_embd];
+        Float w_sigmoid_[c->n_embd];
         lora(w_sigmoid_, xw, bw->att_w1_T, bw->att_w2_T, ARRLEN(xw), c->w_lora_r, LORA_TANH);   // np.tanh(xw @ Ww1) @ Ww2
         VECADD(w_sigmoid_, w_sigmoid_, bw->att_w0);                                             // np.tanh(xw @ Ww1) @ Ww2 + w_bias
         VECSIGM(w_sigmoid_);                                                                    // sigmoid(...)
@@ -287,19 +287,19 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     } while(0); // w = np.exp(-sigmoid(np.tanh(xw @ Ww1) @ Ww2 + w_bias)/np.e**0.5)
 
     // k = Wk @ xk
-    float k[c->n_embd];
+    Float k[c->n_embd];
     MATxVEC(k, xk, bw->att_key_weight);
 
     // v = Wv @ xv
-    float v[c->n_embd];
+    Float v[c->n_embd];
     MATxVEC(v, xv, bw->att_value_weight);
 
     if (IS_NAN(v0[0])) {
-        memcpy(v0, v, sizeof(float) * c->n_embd);
+        memcpy(v0, v, sizeof(Float) * c->n_embd);
     }
     else {
         // v += (v0 - v) * sigmoid(xv @ Wv1 @ Wv2 + v_bias)
-        float v_sigmoid_[c->n_embd];
+        Float v_sigmoid_[c->n_embd];
         lora(v_sigmoid_, xv, bw->att_v1_T, bw->att_v2_T, ARRLEN(xv), c->v_lora_r, LORA_NONE);   // xv @ Wv1 @ Wv2
         VECADD(v_sigmoid_, v_sigmoid_, bw->att_v0);                                             // xv @ Wv1 @ Wv2 + v_bias
         VECSIGM(v_sigmoid_);                                                                    // sigmoid(...)
@@ -307,48 +307,48 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
     }
 
     // a = sigmoid(xa @ Wa1 @ Wa2 + a_bias)
-    float a[c->n_embd];
+    Float a[c->n_embd];
     lora(a, xa, bw->att_a1_T, bw->att_a2_T, ARRLEN(xa), c->a_lora_r, LORA_NONE);    // xa @ Wa1 @ Wa2
     VECADD(a, a, bw->att_a0);                                                       // xa @ Wa1 @ Wa2 + a_bias
     VECSIGM(a);                                                                     // sigmoid(...)
 
     // g = sigmoid(xg @ Wg1) @ Wg2
-    float g[c->n_embd];
+    Float g[c->n_embd];
     lora(g, xg, bw->att_g1_T, bw->att_g2_T, ARRLEN(xg), c->g_lora_r, LORA_SIGM);
 
     // kk = k * k_k
-    float kk[c->n_embd];
+    Float kk[c->n_embd];
     HADAMARD(kk, k, bw->att_k_k);
 
     // k += k * (a-1) * k_a
     do {
-        float ones[c->n_embd];
+        Float ones[c->n_embd];
         for (int i = 0; i < c->n_embd; i++) { ones[i] = 1.0f; }
-        float k_lerp[c->n_embd];
+        Float k_lerp[c->n_embd];
         LERP(k_lerp, ones, a, bw->att_k_a);
         HADAMARD(k, k, k_lerp);
     } while(0);
 
     // multi-head
-    float y[c->n_head * c->head_size];
+    Float y[c->n_head * c->head_size];
     for (int i = 0; i < c->n_head; i++) {
-        float *head_state   = state + i * c->head_size * c->head_size;
-        float *head_kk      = kk    + i * c->head_size;
-        float *head_y       = y     + i * c->head_size;
-        const float *head_r = r     + i * c->head_size;
-        const float *head_w = w     + i * c->head_size;
-        const float *head_k = k     + i * c->head_size;
-        const float *head_v = v     + i * c->head_size;
-        const float *head_a = a     + i * c->head_size;
+        Float *head_state   = state + i * c->head_size * c->head_size;
+        Float *head_kk      = kk    + i * c->head_size;
+        Float *head_y       = y     + i * c->head_size;
+        const Float *head_r = r     + i * c->head_size;
+        const Float *head_w = w     + i * c->head_size;
+        const Float *head_k = k     + i * c->head_size;
+        const Float *head_v = v     + i * c->head_size;
+        const Float *head_a = a     + i * c->head_size;
 
-        const float *ln_w   = bw->att_ln_x_weight   + i * c->head_size;
-        const float *ln_b   = bw->att_ln_x_bias     + i * c->head_size;
-        const float *r_k    = bw->att_r_k           + i * c->head_size;
+        const Float *ln_w   = bw->att_ln_x_weight   + i * c->head_size;
+        const Float *ln_b   = bw->att_ln_x_bias     + i * c->head_size;
+        const Float *r_k    = bw->att_r_k           + i * c->head_size;
 
         // kk /= np.maximum(np.linalg.norm(kk, axis=1,keepdims=1), 1e-12)
         do {
-            float kk_norm = vec_dot_product(head_kk, head_kk, c->head_size);
-            kk_norm = sqrt(kk_norm);
+            Float kk_norm = vec_dot_product(head_kk, head_kk, c->head_size);
+            kk_norm = sqrtf(kk_norm);
             vec_scale(head_kk, head_kk, 1.0f/MAXIMUM(kk_norm, 1e-12f), c->head_size);
         } while(0); // kk /= np.maximum(np.linalg.norm(kk, axis=1,keepdims=1), 1e-12)
 
@@ -357,20 +357,20 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
         // - to avoid non-contiguous memory access of column vectors in matrix computation
         // - S = S * w.mT - S @ kk * (kk * a).mT + v * k.mT
         do {
-            float state_mul_kk[c->head_size];
+            Float state_mul_kk[c->head_size];
             mat_mul_vec(state_mul_kk, head_kk, head_state, c->head_size, c->head_size); // S @ kk
 
-            float kk_mul_a[c->head_size];
+            Float kk_mul_a[c->head_size];
             HADAMARD(kk_mul_a, head_kk, head_a);                                        // kk * a
 
-            float tmp[c->head_size * c->head_size];
+            Float tmp[c->head_size * c->head_size];
             vec_out_product(tmp, state_mul_kk, kk_mul_a, c->head_size);                 // S @ kk * (kk*a).mT
 
-            float v_mul_k[c->head_size * c->head_size];
+            Float v_mul_k[c->head_size * c->head_size];
             vec_out_product(v_mul_k, head_v, head_k, c->head_size);                     // v * k.mT
 
             for (int j = 0; j < c->head_size; j++) {
-                float *state_row = head_state + j * c->head_size;
+                Float *state_row = head_state + j * c->head_size;
                 vec_hadamard(state_row, state_row, head_w, c->head_size);               // S = S * w.mT
             }
 
@@ -386,10 +386,10 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
 
         // y += ((r * k * r_k).sum(axis=1,keepdims=1) * v).flatten()
         do {
-            float k_mul_r_k[c->head_size];
+            Float k_mul_r_k[c->head_size];
             HADAMARD(k_mul_r_k, head_k, r_k);
-            float y_sum_ = vec_dot_product(head_r, k_mul_r_k, c->head_size);
-            float head_u[c->head_size];
+            Float y_sum_ = vec_dot_product(head_r, k_mul_r_k, c->head_size);
+            Float head_u[c->head_size];
             VECSCALE(head_u, head_v, y_sum_);
             vec_add(head_y, head_y, head_u, c->head_size);
         } while(0); // y += ((r * k * r_k).sum(axis=1,keepdims=1) * v).flatten()
@@ -397,36 +397,36 @@ void time_mixing(float *dx, const float *x, float *v0, float *last_x, float *sta
 
     // dx = Wo @ (y * g)
     do {
-        float y_mul_g[c->n_embd];
+        Float y_mul_g[c->n_embd];
         HADAMARD(y_mul_g, y, g);
         mat_mul_vec(dx, y_mul_g, bw->att_output_weight, ARRLEN(y_mul_g), c->n_embd);
     } while(0); // dx = Wo @ (y * g)
 
     // last_x = x
-    memcpy(last_x, x, sizeof(float) * c->n_embd);
+    memcpy(last_x, x, sizeof(Float) * c->n_embd);
 }
 
-void channel_mixing(float *dx, const float *x, float *last_x, block_weights *bw, rwkv_config *c) {
-    float k[c->n_embd * 4];
-    float xk[c->n_embd];
+void channel_mixing(Float *dx, const Float *x, Float *last_x, block_weights *bw, rwkv_config *c) {
+    Float k[c->n_embd * 4];
+    Float xk[c->n_embd];
     LERP(xk, x, last_x, bw->ffn_x_k);
     MATxVEC(k, xk, bw->ffn_key_weight);
 
-    float v[c->n_embd];
+    Float v[c->n_embd];
     for (int i = 0; i < ARRLEN(k); i++) { k[i] = SQUARE(RELU(k[i])); }
     MATxVEC(v, k, bw->ffn_value_weight);
-    memcpy(dx, v, sizeof(float) * c->n_embd);
-    memcpy(last_x, x, sizeof(float) * c->n_embd);
+    memcpy(dx, v, sizeof(Float) * c->n_embd);
+    memcpy(last_x, x, sizeof(Float) * c->n_embd);
 }
 
-void forward(float *logits, rwkv_config *c, rwkv_weights *w, float *model_state[], int token) {
-    float x[c->n_embd];
-    memcpy(x, w->emb_weight + token * c->n_embd, sizeof(float) *ARRLEN(x));
+void forward(Float *logits, rwkv_config *c, rwkv_weights *w, Float *model_state[], int token) {
+    Float x[c->n_embd];
+    memcpy(x, w->emb_weight + token * c->n_embd, sizeof(Float) *ARRLEN(x));
     layer_norm(x, x, w->blocks_0_ln0_weight, w->blocks_0_ln0_bias, ARRLEN(x), 1e-5f);
 
-    float x_[c->n_embd];
-    float v0[c->n_embd]; v0[0] = NAN;
-    float dx[c->n_embd];
+    Float x_[c->n_embd];
+    Float v0[c->n_embd]; v0[0] = NAN;
+    Float dx[c->n_embd];
 
     for (int i = 0; i < c->n_layer; i++) {
         layer_norm(x_, x, w->blocks[i].ln1_weight, w->blocks[i].ln1_bias, ARRLEN(x_), 1e-5f);
@@ -447,14 +447,14 @@ void forward(float *logits, rwkv_config *c, rwkv_weights *w, float *model_state[
 }
 
 // load and free
-void mat_transpose(float *mat, int rows, int cols) {
-    float *tmp = malloc(rows * cols * sizeof(float));
+void mat_transpose(Float *mat, int rows, int cols) {
+    Float *tmp = malloc(rows * cols * sizeof(Float));
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             tmp[j * rows + i] = mat[i * cols + j];
         }
     }
-    memcpy(mat, tmp, rows * cols * sizeof(float));
+    memcpy(mat, tmp, rows * cols * sizeof(Float));
     free(tmp);
 }
 
@@ -485,8 +485,11 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     ERR(fread(&header, sizeof(header), 1, fp) != 1, "failed to get model header");
 
     ERR(header.magic_number != 0x00632E37766B7772, "invalid model magic number");
-    ERR(header.quant != 0, "quantized model is not supported");
-
+#if defined(USE_FP16)
+    ERR(header.quant != 1, "only fp16 model is supported");
+#else
+    ERR(header.quant != 0, "only fp32 model is supported");
+#endif
     // set model config
     c->head_size    = header.head_size;
     c->vocab_size   = header.vocab_size;
@@ -506,7 +509,7 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     ERR(fread(w->raw, sizeof(uint8_t), raw_weights_size, fp) != raw_weights_size, "failed to load model weights");
     fclose(fp);
 
-    float *ptr = w->raw;
+    Float *ptr = w->raw;
     w->emb_weight                   = ptr; ptr += c->vocab_size * c->n_embd     ;
     w->blocks_0_ln0_weight          = ptr; ptr += c->n_embd                     ;
     w->blocks_0_ln0_bias            = ptr; ptr += c->n_embd                     ;
@@ -552,21 +555,21 @@ void load_model(const char *model_path, rwkv_config *c, rwkv_weights *w) {
     w->ln_out_bias                  = ptr; ptr += c->n_embd                     ;
     w->head_weight                  = ptr; ptr += c->n_embd     * c->vocab_size ;
 
-    ERR((ptr - w->raw) * sizeof(float) != raw_weights_size, "failed to map model weights");
+    ERR((ptr - w->raw) * sizeof(Float) != raw_weights_size, "failed to map model weights");
 
     // transpose all lora weight matrices
     for (int i = 0; i < c->n_layer; i++) {
         block_weights *b = w->blocks + i;
         if (i != 0) {
-            mat_transpose((float *)b->att_v1_T, c->n_embd, c->v_lora_r);
-            mat_transpose((float *)b->att_v2_T, c->v_lora_r, c->n_embd);
+            mat_transpose((Float *)b->att_v1_T, c->n_embd, c->v_lora_r);
+            mat_transpose((Float *)b->att_v2_T, c->v_lora_r, c->n_embd);
         }
-        mat_transpose((float *)b->att_w1_T, c->n_embd, c->w_lora_r);
-        mat_transpose((float *)b->att_w2_T, c->w_lora_r, c->n_embd);
-        mat_transpose((float *)b->att_a1_T, c->n_embd, c->a_lora_r);
-        mat_transpose((float *)b->att_a2_T, c->a_lora_r, c->n_embd);
-        mat_transpose((float *)b->att_g1_T, c->n_embd, c->g_lora_r);
-        mat_transpose((float *)b->att_g2_T, c->g_lora_r, c->n_embd);
+        mat_transpose((Float *)b->att_w1_T, c->n_embd, c->w_lora_r);
+        mat_transpose((Float *)b->att_w2_T, c->w_lora_r, c->n_embd);
+        mat_transpose((Float *)b->att_a1_T, c->n_embd, c->a_lora_r);
+        mat_transpose((Float *)b->att_a2_T, c->a_lora_r, c->n_embd);
+        mat_transpose((Float *)b->att_g1_T, c->n_embd, c->g_lora_r);
+        mat_transpose((Float *)b->att_g2_T, c->g_lora_r, c->n_embd);
     }
 }
 
@@ -678,11 +681,11 @@ int main(int argc, char *argv[]) {
     encode(&tokenizer, context, token_list, &prefilling_tokens);
     free(context);
 
-    float *model_state[2];  // init with zero
-    model_state[0] = calloc(config.n_layer * 2 * config.n_embd, sizeof(float));
-    model_state[1] = calloc(config.n_layer * config.n_head * config.head_size * config.head_size, sizeof(float));
+    Float *model_state[2];  // init with zero
+    model_state[0] = calloc(config.n_layer * 2 * config.n_embd, sizeof(Float));
+    model_state[1] = calloc(config.n_layer * config.n_head * config.head_size * config.head_size, sizeof(Float));
 
-    float logits[config.vocab_size];
+    Float logits[config.vocab_size];
     long start, end;
     long prefilling_time, decoding_time;
 

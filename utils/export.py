@@ -11,9 +11,16 @@ def serialize_fp32(file, tensor):
     b = struct.pack(f'{len(d)}f', *d)
     file.write(b)
 
-def export(model, export_path):
-    # fp32 - 0
-    quant = 0
+def serialize_fp16(file, tensor):
+    d = tensor.detach().cpu().view(-1).to(torch.float16).numpy()
+    b = struct.pack(f'{len(d)}e', *d)
+    file.write(b)
+
+def export(model, export_path, quant):
+    if quant not in ['fp32', 'fp16']:
+        raise ValueError("data type must be 'fp32' or 'fp16'")
+    quant_idx = 0 if quant == 'fp32' else 1
+
     # r  w  k  v  7  .  c
     # 72 77 6B 76 37 2E 63
     magic_number = 0x00632E37766B7772
@@ -26,7 +33,7 @@ def export(model, export_path):
     export_model = open(export_path, 'wb')
     header = struct.pack(
         'Liiiiiiiii',
-        magic_number, quant, head_size, n_embd, n_layer, vocab_size,
+        magic_number, quant_idx, head_size, n_embd, n_layer, vocab_size,
         w_lora_rank, a_lora_rank, g_lora_rank, v_lora_rank
     )
     export_model.write(header)
@@ -89,13 +96,16 @@ def export(model, export_path):
     ])
 
     for w in weights:
-        serialize_fp32(export_model, w)
+        if quant == 'fp32':
+            serialize_fp32(export_model, w)
+        elif quant == 'fp16':
+            serialize_fp16(export_model, w)
 
     print("Model export done: ", export_path)
     export_model.close()
 
-if len(sys.argv) < 3:
-    print('Usage: python export.py <rwkv_model> <export_model>')
+if len(sys.argv) < 4:
+    print('Usage: python export.py <rwkv_model> <export_model> <data_type>')
     sys.exit(1)
 
 rwkv_model = os.path.abspath(sys.argv[1])
@@ -114,5 +124,5 @@ gc.collect()
 model = torch.load(rwkv_model, map_location='cpu', weights_only=True)
 
 print("Exporting model...")
-export(model, os.path.abspath(sys.argv[2]))
+export(model, os.path.abspath(sys.argv[2]), sys.argv[3])
 

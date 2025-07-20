@@ -12,10 +12,18 @@
 
 #include "rwkv_vocab_v20230424.h"
 
+#if defined(USE_FP16)
+typedef __fp16 Float;
+#else
+typedef float Float;
+#endif
+
 #if defined(AVX)
 #include "simd/avx.h"
 #elif defined(NEON)
 #include "simd/neon.h"
+#elif defined(NEON_FP16)
+#include "simd/neon-fp16.h"
 #endif
 
 #define ERR(COND, MSG)              do { if (COND) { fprintf(stderr, "Error: %s\n", MSG); exit(EXIT_FAILURE); } } while(0)
@@ -58,50 +66,50 @@ typedef struct {
 } rwkv_config;
 
 typedef struct {
-    const float *ln1_weight             ;
-    const float *ln1_bias               ;
-    const float *ln2_weight             ;
-    const float *ln2_bias               ;
-    const float *att_x_r                ;
-    const float *att_x_w                ;
-    const float *att_x_k                ;
-    const float *att_x_v                ;
-    const float *att_x_a                ;
-    const float *att_x_g                ;
-    const float *att_w0                 ;
-    const float *att_r_k                ;
-    const float *att_w1_T               ;
-    const float *att_w2_T               ;
-    const float *att_a1_T               ;
-    const float *att_a2_T               ;
-    const float *att_a0                 ;
-    const float *att_g1_T               ;
-    const float *att_g2_T               ;
-    const float *att_v2_T               ;
-    const float *att_v1_T               ;
-    const float *att_v0                 ;
-    const float *att_k_k                ;
-    const float *att_k_a                ;
-    const float *att_receptance_weight  ;
-    const float *att_key_weight         ;
-    const float *att_value_weight       ;
-    const float *att_output_weight      ;
-    const float *att_ln_x_weight        ;
-    const float *att_ln_x_bias          ;
-    const float *ffn_x_k                ;
-    const float *ffn_key_weight         ;
-    const float *ffn_value_weight       ;
+    const Float *ln1_weight             ;
+    const Float *ln1_bias               ;
+    const Float *ln2_weight             ;
+    const Float *ln2_bias               ;
+    const Float *att_x_r                ;
+    const Float *att_x_w                ;
+    const Float *att_x_k                ;
+    const Float *att_x_v                ;
+    const Float *att_x_a                ;
+    const Float *att_x_g                ;
+    const Float *att_w0                 ;
+    const Float *att_r_k                ;
+    const Float *att_w1_T               ;
+    const Float *att_w2_T               ;
+    const Float *att_a1_T               ;
+    const Float *att_a2_T               ;
+    const Float *att_a0                 ;
+    const Float *att_g1_T               ;
+    const Float *att_g2_T               ;
+    const Float *att_v2_T               ;
+    const Float *att_v1_T               ;
+    const Float *att_v0                 ;
+    const Float *att_k_k                ;
+    const Float *att_k_a                ;
+    const Float *att_receptance_weight  ;
+    const Float *att_key_weight         ;
+    const Float *att_value_weight       ;
+    const Float *att_output_weight      ;
+    const Float *att_ln_x_weight        ;
+    const Float *att_ln_x_bias          ;
+    const Float *ffn_x_k                ;
+    const Float *ffn_key_weight         ;
+    const Float *ffn_value_weight       ;
 } block_weights;
 
 typedef struct {
-    float *raw;
-    const float *emb_weight;
-    const float *blocks_0_ln0_weight;
-    const float *blocks_0_ln0_bias;
+    Float *raw;
+    const Float *emb_weight;
+    const Float *blocks_0_ln0_weight;
+    const Float *blocks_0_ln0_bias;
     block_weights *blocks;
-    const float *ln_out_weight;
-    const float *ln_out_bias;
-    const float *head_weight;
+    const Float *ln_out_weight;
+    const Float *ln_out_bias;
+    const Float *head_weight;
 } rwkv_weights;
 
 typedef struct {
