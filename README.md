@@ -15,6 +15,7 @@ rwkv7-g1-0.1b-20250307-ctx4096.pth
 rwkv7-g1-0.4b-20250324-ctx4096.pth
 rwkv7-g1-1.5b-20250429-ctx4096.pth
 rwkv7-g1-2.9b-20250519-ctx4096.pth
+rwkv7-g0-7.2b-20250722-ctx4096.pth
 ```
 
 ## Usage
