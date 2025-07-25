@@ -578,6 +578,7 @@ void free_model(rwkv_weights *w) {
 void load_tokenizer(rwkv_tokenizer *t, int vocab_size) {
     t->vocab = _vocab;
     t->vocab_size = vocab_size;
+    t->max_token_length = 0;
 
     t->sorted_vocab = malloc(t->vocab_size * sizeof(TokenIndex));
     int sorted_vocab_idx = 0;
@@ -586,12 +587,13 @@ void load_tokenizer(rwkv_tokenizer *t, int vocab_size) {
             t->sorted_vocab[sorted_vocab_idx].str = t->vocab[i];
             t->sorted_vocab[sorted_vocab_idx].id = i;
             sorted_vocab_idx++;
+
+            t->max_token_length = MAXIMUM(strlen(t->vocab[i]), t->max_token_length);
         }
     }
     ERR(sorted_vocab_idx != t->vocab_size, "failed to load vocabulary");
 
     qsort(t->sorted_vocab, t->vocab_size, sizeof(TokenIndex), compare_tokens);
-    t->max_token_length = strlen(t->sorted_vocab[t->vocab_size-1].str);
 }
 
 void free_tokenizer(rwkv_tokenizer *t) {
