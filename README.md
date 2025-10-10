@@ -4,6 +4,8 @@
 
 Inference RWKV v7 in **pure C**.
 
+`classic` branch: Pure RNN inference.
+
 ## Tested model
 
 ```
